@@ -16,6 +16,7 @@ class _ScanToShelveScreenState extends State<ScanToShelveScreen> {
   Book? _scannedBook;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasNavigated = false; // Empêcher les navigations multiples
 
   @override
   Widget build(BuildContext context) {
@@ -182,10 +183,23 @@ class _ScanToShelveScreenState extends State<ScanToShelveScreen> {
   }
 
   Future<void> _handleBarcodeScanned(String code) async {
+    // Empêcher les détections multiples pendant la navigation
+    if (_hasNavigated) return;
+    
+    setState(() {
+      _hasNavigated = true;
+    });
+    
     // Navigation immédiate vers l'écran de rangement avec l'ISBN scanné
     if (mounted) {
-      context.push('${AppRoutes.shelveBook}?isbn=$code');
+      // Utiliser pushReplacement pour remplacer l'écran de scan
+      context.pushReplacement('${AppRoutes.shelveBook}?isbn=$code');
     }
+  }
+  
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   void _saveBook() {

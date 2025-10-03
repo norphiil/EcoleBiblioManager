@@ -80,11 +80,16 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   Timer? _captureTimer;
   bool _isScanning = false;
   bool _isReady = false;
+  bool _isSwitchingCamera = false; // État de changement de caméra
   String? _lastDetectedBarcode;
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
   double _cameraRotation = 0.0;
   bool _showCameraDropdown = false;
+  
+  // Champ de saisie manuelle ISBN
+  final TextEditingController _manualIsbnController = TextEditingController();
+  final FocusNode _manualIsbnFocusNode = FocusNode();
   
   // Animations pour l'UI
   late AnimationController _scanAnimationController;
@@ -125,6 +130,11 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       curve: Curves.easeInOut,
     ));
     
+    // Écouter les changements de focus pour afficher/masquer l'indicateur de pause
+    _manualIsbnFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+    
     _initializeScanner();
   }
 
@@ -135,6 +145,8 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     _pulseAnimationController.dispose();
     _controller?.dispose();
     _backendService.dispose();
+    _manualIsbnController.dispose();
+    _manualIsbnFocusNode.dispose();
     super.dispose();
   }
 
@@ -211,9 +223,17 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   /// Capture et analyse une image
   Future<void> _captureAndAnalyze() async {
     if (_isScanning || !_isReady || _controller?.value.isInitialized != true) return;
+    
+    // Ne pas scanner si l'utilisateur tape dans le champ manuel
+    if (_manualIsbnFocusNode.hasFocus) return;
 
     try {
-      setState(() => _isScanning = true);
+      // Éviter setState si le focus est sur le champ manuel
+      if (!_manualIsbnFocusNode.hasFocus && mounted) {
+        setState(() => _isScanning = true);
+      } else {
+        _isScanning = true;
+      }
 
       final XFile imageFile = await _controller!.takePicture();
       final Uint8List imageBytes = await imageFile.readAsBytes();
@@ -237,13 +257,19 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     } catch (e) {
       debugPrint('Erreur capture: $e');
     } finally {
-      if (mounted) setState(() => _isScanning = false);
+      // Éviter setState si le focus est sur le champ manuel
+      if (!_manualIsbnFocusNode.hasFocus && mounted) {
+        setState(() => _isScanning = false);
+      } else if (mounted) {
+        _isScanning = false;
+      }
     }
   }
 
   /// Traite les résultats de détection avec priorisation des codes valides
   void _processDetectionResults(List<dynamic> barcodes) {
     if (barcodes.isEmpty) return;
+    if (!mounted) return; // Ne pas traiter si le widget n'est plus monté
     
     // Extraire tous les codes détectés
     final detectedCodes = <String>[];
@@ -261,6 +287,8 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       final code = detectedCodes.first;
       if (_lastDetectedBarcode != code) {
         _lastDetectedBarcode = code;
+        // Arrêter le scanner immédiatement après détection
+        _stopScanning();
         widget.onBarcodeDetected(code);
       }
       return;
@@ -274,8 +302,18 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     if (validIsbn != null && _lastDetectedBarcode != validIsbn) {
       _lastDetectedBarcode = validIsbn;
       debugPrint('[Scanner] Code sélectionné: $validIsbn');
+      // Arrêter le scanner immédiatement après détection
+      _stopScanning();
       widget.onBarcodeDetected(validIsbn);
     }
+  }
+  
+  /// Arrête temporairement le scanner
+  void _stopScanning() {
+    _captureTimer?.cancel();
+    setState(() {
+      _isReady = false;
+    });
   }
   
   /// Trouve l'ISBN le plus valide parmi une liste de codes
@@ -317,9 +355,51 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     return scoredCodes.isNotEmpty ? scoredCodes.first.key : null;
   }
   
-  /// Nettoie un ISBN (retire les tirets et espaces)
+  /// Nettoie un ISBN (retire les tirets, espaces et caractères spéciaux, garde seulement les chiffres)
   String _cleanIsbn(String isbn) {
     return isbn.replaceAll(RegExp(r'[^0-9X]'), '').toUpperCase();
+  }
+  
+  /// Traiter la saisie manuelle d'ISBN
+  void _handleManualIsbn() {
+    final rawIsbn = _manualIsbnController.text.trim();
+    if (rawIsbn.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez entrer un ISBN'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Nettoyer l'ISBN : supprimer tous les caractères sauf les chiffres
+    final cleanedIsbn = rawIsbn.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    if (cleanedIsbn.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ISBN invalide : aucun chiffre trouvé'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    // Vérifier la longueur (ISBN-10 ou ISBN-13)
+    if (cleanedIsbn.length != 10 && cleanedIsbn.length != 13) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('ISBN invalide : ${cleanedIsbn.length} chiffres (doit être 10 ou 13)'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      // On continue quand même avec le code nettoyé
+    }
+    
+    // Appeler le callback avec l'ISBN nettoyé
+    widget.onBarcodeDetected(cleanedIsbn);
+    _manualIsbnController.clear();
   }
 
   /// Change de caméra par index
@@ -328,7 +408,9 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     
     try {
       setState(() {
-        _statusMessage = 'Changement caméra...';
+        _isSwitchingCamera = true; // Activer l'état de chargement
+        _isReady = false; // Marquer comme non prêt
+        _statusMessage = 'Changement de caméra...';
         _showCameraDropdown = false;
       });
       
@@ -337,11 +419,23 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       
       _selectedCameraIndex = index;
       await _initializeCamera();
+      
+      // Attendre que la caméra soit vraiment stable
+      await Future.delayed(const Duration(milliseconds: 500));
+      
       _startPeriodicCapture();
       
-      setState(() => _statusMessage = 'Caméra changée ✓');
+      setState(() {
+        _isSwitchingCamera = false; // Désactiver l'état de chargement
+        _isReady = true; // Marquer comme prêt
+        _statusMessage = 'Caméra changée ✓';
+      });
     } catch (e) {
-      setState(() => _statusMessage = 'Erreur changement caméra');
+      setState(() {
+        _isSwitchingCamera = false;
+        _isReady = false;
+        _statusMessage = 'Erreur changement caméra: $e';
+      });
     }
   }
 
@@ -366,10 +460,10 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.4),
+          color: Colors.black.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(16),
           border: _showCameraDropdown
-              ? Border.all(color: Colors.blue.withOpacity(0.5), width: 1)
+              ? Border.all(color: Colors.blue.withValues(alpha: 0.5), width: 1)
               : null,
         ),
         child: Row(
@@ -377,13 +471,13 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
           children: [
             Icon(
               Icons.videocam,
-              color: Colors.white.withOpacity(0.9),
+              color: Colors.white.withValues(alpha: 0.9),
               size: 16,
             ),
             const SizedBox(width: 4),
             Icon(
               _showCameraDropdown ? Icons.expand_less : Icons.expand_more,
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7),
               size: 16,
             ),
           ],
@@ -400,9 +494,9 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       child: Container(
         width: 200,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.9),
+          color: Colors.black.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -412,7 +506,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
               child: Text(
                 'Sélectionner caméra',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -430,13 +524,13 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isSelected ? Colors.blue.withOpacity(0.2) : null,
+                      color: isSelected ? Colors.blue.withValues(alpha: 0.2) : null,
                     ),
                     child: Row(
                       children: [
                         Icon(
                           _getCameraIcon(camera),
-                          color: isSelected ? Colors.blue : Colors.white.withOpacity(0.7),
+                          color: isSelected ? Colors.blue : Colors.white.withValues(alpha: 0.7),
                           size: 16,
                         ),
                         const SizedBox(width: 8),
@@ -444,7 +538,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
                           child: Text(
                             _getCameraName(camera, index),
                             style: TextStyle(
-                              color: isSelected ? Colors.blue : Colors.white.withOpacity(0.9),
+                              color: isSelected ? Colors.blue : Colors.white.withValues(alpha: 0.9),
                               fontSize: 12,
                               fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
                             ),
@@ -542,7 +636,8 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
 
   @override
   Widget build(BuildContext context) {
-    if (!_isReady) {
+    // Afficher l'écran de chargement si non prêt OU en train de changer de caméra
+    if (!_isReady || _isSwitchingCamera) {
       return _buildLoadingScreen();
     }
 
@@ -550,15 +645,18 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Vue caméra avec effet miroir et rotation
+          // Vue caméra avec effet miroir et rotation - sans déformation
           if (_controller?.value.isInitialized == true)
-            Positioned.fill(
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..scale(-1.0, 1.0) // Effet miroir
-                  ..rotateZ(_cameraRotation * 3.14159 / 180),
-                child: CameraPreview(_controller!),
+            Center(
+              child: AspectRatio(
+                aspectRatio: _controller!.value.aspectRatio,
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..scale(-1.0, 1.0) // Effet miroir
+                    ..rotateZ(_cameraRotation * 3.14159 / 180),
+                  child: CameraPreview(_controller!),
+                ),
               ),
             ),
           
@@ -573,6 +671,12 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
           
           // Indicateur de scan en cours
           if (_isScanning) _buildScanningIndicator(),
+          
+          // Indicateur que le scanner est en pause (focus sur champ manuel)
+          if (_manualIsbnFocusNode.hasFocus) _buildScannerPausedIndicator(),
+          
+          // Champ de saisie manuelle d'ISBN en bas
+          _buildManualIsbnInput(),
         ],
       ),
     );
@@ -590,9 +694,9 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(60),
-                border: Border.all(color: Colors.blue.withOpacity(0.3), width: 2),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 2),
               ),
               child: const Center(
                 child: Icon(
@@ -624,7 +728,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
             SizedBox(
               width: 200,
               child: LinearProgressIndicator(
-                backgroundColor: Colors.grey.withOpacity(0.3),
+                backgroundColor: Colors.grey.withValues(alpha: 0.3),
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
               ),
             ),
@@ -636,77 +740,91 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
 
   /// Overlay sobre et professionnel avec cadre de scan
   Widget _buildModernScanOverlay() {
-    return Center(
-      child: Container(
-        width: 260,
-        height: 260,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Stack(
-          children: [
-            // Cadre principal avec coins stylisés
-            CustomPaint(
-              size: const Size(260, 260),
-              painter: ScanFramePainter(
-                cornerLength: 24,
-                cornerWidth: 3,
-                frameColor: Colors.white.withOpacity(0.8),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculer les dimensions proportionnelles
+        // Pour les codes-barres de livres
+        final double scanWidth = constraints.maxWidth * 0.60;
+        final double scanHeight = constraints.maxHeight * 0.30;
+        
+        // Calculer la taille des coins proportionnellement
+        final double cornerLength = scanWidth * 0.12; // 12% de la largeur
+        final double cornerWidth = 4.0;
+        
+        return Center(
+          child: Container(
+            width: scanWidth,
+            height: scanHeight,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
             ),
-            
-            // Ligne de scan animée sobre
-            AnimatedBuilder(
-              animation: _scanAnimation,
-              builder: (context, child) {
-                return Positioned(
-                  top: 16 + (228 * _scanAnimation.value),
-                  left: 16,
-                  right: 16,
-                  child: Container(
-                    height: 1.5,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          Colors.blue.withOpacity(0.8),
-                          Colors.blue,
-                          Colors.blue.withOpacity(0.8),
-                          Colors.transparent,
-                        ],
+            child: Stack(
+              children: [
+                // Cadre principal avec coins stylisés
+                CustomPaint(
+                  size: Size(scanWidth, scanHeight),
+                  painter: ScanFramePainter(
+                    cornerLength: cornerLength,
+                    cornerWidth: cornerWidth,
+                    frameColor: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+                
+                // Ligne de scan animée sobre
+                AnimatedBuilder(
+                  animation: _scanAnimation,
+                  builder: (context, child) {
+                    final double scanLineTop = 16 + ((scanHeight - 32) * _scanAnimation.value);
+                    return Positioned(
+                      top: scanLineTop,
+                      left: 16,
+                      right: 16,
+                      child: Container(
+                        height: 2,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.transparent,
+                              Colors.blue.withValues(alpha: 0.8),
+                              Colors.blue,
+                              Colors.blue.withValues(alpha: 0.8),
+                              Colors.transparent,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(1),
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(1),
+                    );
+                  },
+                ),
+                
+                // Instructions discrètes
+                Positioned(
+                  bottom: -50,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Centrez le code-barres',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                );
-              },
-            ),
-            
-            // Instructions discrètes
-            Positioned(
-              bottom: -50,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
-                  'Centrez le code-barres',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -723,7 +841,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -777,12 +895,12 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.4),
+          color: Colors.black.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
           icon,
-          color: Colors.white.withOpacity(0.9),
+          color: Colors.white.withValues(alpha: 0.9),
           size: 18,
         ),
       ),
@@ -792,14 +910,14 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   /// Indicateur de scan sobre et discret
   Widget _buildScanningIndicator() {
     return Positioned(
-      bottom: 120,
+      bottom: 180,
       left: 0,
       right: 0,
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
+            color: Colors.black.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Row(
@@ -809,7 +927,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
                 width: 12,
                 height: 12,
                 child: CircularProgressIndicator(
-                  color: Colors.blue.withOpacity(0.8),
+                  color: Colors.blue.withValues(alpha: 0.8),
                   strokeWidth: 1.5,
                 ),
               ),
@@ -817,12 +935,273 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
               Text(
                 'Analyse...',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Indicateur que le scanner est en pause (focus sur champ manuel)
+  Widget _buildScannerPausedIndicator() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: GestureDetector(
+        onTap: () {
+          // Retirer le focus du champ manuel pour réactiver le scanner
+          _manualIsbnFocusNode.unfocus();
+        },
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.orange.shade600.withValues(alpha: 0.95),
+                Colors.orange.shade700.withValues(alpha: 0.95),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orange.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.pause_circle_outline,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Scanner en pause',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Cliquez ici pour réactiver le scanner automatique',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.touch_app,
+                color: Colors.white.withValues(alpha: 0.8),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Champ de saisie manuelle d'ISBN en bas du scanner
+  Widget _buildManualIsbnInput() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7),
+              Colors.black.withValues(alpha: 0.95),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Titre avec icône
+                Row(
+                  children: [
+                    Icon(
+                      Icons.edit_outlined,
+                      color: Colors.white.withValues(alpha: 0.7),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Saisie manuelle',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                
+                // Champ de texte et bouton
+                Row(
+                  children: [
+                    // Champ de texte stylisé
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2A2A2A), // Fond gris foncé pour contraste
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.blue.withValues(alpha: 0.4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: TextField(
+                          controller: _manualIsbnController,
+                          focusNode: _manualIsbnFocusNode,
+                          keyboardType: TextInputType.text, // Changé de number à text pour accepter tirets et espaces
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 1.2,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Entrez l\'ISBN (ex: 9782123456789)',
+                            hintStyle: TextStyle(
+                              color: Colors.grey.shade400,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                              letterSpacing: 0.5,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.numbers,
+                              color: Colors.blue.withValues(alpha: 0.6),
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            filled: false,
+                          ),
+                          onSubmitted: (_) => _handleManualIsbn(),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(width: 12),
+                    
+                    // Bouton Rechercher stylisé
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _handleManualIsbn,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.blue.shade400,
+                                Colors.blue.shade600,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(
+                                Icons.search,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Rechercher',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                // Note d'aide
+                const SizedBox(height: 10),
+                Text(
+                  'Seuls les chiffres seront conservés (espaces et caractères spéciaux supprimés)',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

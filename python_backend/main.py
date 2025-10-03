@@ -67,50 +67,40 @@ class BarcodeDetector:
         Prétraitement de l'image pour améliorer la détection
         Retourne plusieurs versions de l'image optimisées
         """
-        logger.debug(f"⚙️ Début prétraitement - Image: {image.shape}")
         processed_images = []
         
         # Image originale
-        logger.debug("  📷 Ajout image originale")
         processed_images.append(image)
         
         # Conversion en niveaux de gris si nécessaire
         if len(image.shape) == 3:
-            logger.debug("  🌈 Conversion en niveaux de gris")
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
-            logger.debug("  ⬜ Image déjà en niveaux de gris")
             gray = image
             
         processed_images.append(gray)
         
         # Amélioration du contraste (CLAHE)
-        logger.debug("  🔆 Amélioration du contraste (CLAHE)")
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
         processed_images.append(enhanced)
         
         # Seuillage adaptatif
-        logger.debug("  🎨 Seuillage adaptatif")
         thresh = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
         )
         processed_images.append(thresh)
         
         # Filtre médian pour réduire le bruit
-        logger.debug("  🧹 Filtre anti-bruit")
         denoised = cv2.medianBlur(gray, 3)
         processed_images.append(denoised)
         
         # Augmentation de la netteté
-        logger.debug("  ✨ Augmentation de la netteté")
         kernel = np.array([[-1,-1,-1],
                           [-1, 9,-1],
                           [-1,-1,-1]])
         sharpened = cv2.filter2D(gray, -1, kernel)
         processed_images.append(sharpened)
-        
-        logger.debug(f"✅ Prétraitement terminé - {len(processed_images)} versions créées")
         
         return processed_images
 
@@ -121,51 +111,25 @@ class BarcodeDetector:
         start_time = time.time()
         detected_barcodes = []
         
-        logger.info(f"📷 Démarrage détection - Image: {image.shape[1]}x{image.shape[0]}px")
-        
         try:
             # Prétraitement de l'image
-            logger.info("🔍 Prétraitement de l'image...")
             processed_images = self.preprocess_image(image)
-            logger.info(f"⚙️ {len(processed_images)} versions d'image générées")
             
             # Tentative de détection sur chaque version prétraitée
-            logger.info("🔍 Démarrage boucle de détection sur images prétraitées...")
             for i, processed_img in enumerate(processed_images):
-                logger.debug(f"  🔎 Test méthode {i} - Image: {processed_img.shape}")
                 barcodes = pyzbar.decode(processed_img, symbols=self.supported_formats)
                 
                 if barcodes:
                     logger.info(f"✅ Codes-barres détectés avec la méthode {i} - {len(barcodes)} codes trouvés")
                     break
-                else:
-                    logger.debug(f"  ❌ Aucun code détecté avec la méthode {i}")
             else:
-                # Si aucune détection, essayer avec des rotations
-                logger.info("🔄 Aucune détection, tentative avec rotations...")
-                for angle in [90, 180, 270]:
-                    logger.debug(f"  🔄 Test rotation {angle}°")
-                    rotated = self._rotate_image(processed_images[1], angle)
-                    barcodes = pyzbar.decode(rotated, symbols=self.supported_formats)
-                    if barcodes:
-                        logger.info(f"✅ Codes-barres détectés avec rotation {angle}° - {len(barcodes)} codes trouvés")
-                        break
-                    else:
-                        logger.debug(f"  ❌ Aucun code détecté avec rotation {angle}°")
-                else:
-                    logger.info("❌ Aucun code-barres détecté après toutes les tentatives")
-                    barcodes = []
-            
-            # Traitement des résultats
-            if barcodes:
-                logger.info(f"📊 Traitement de {len(barcodes)} codes-barres détectés...")
+                logger.info("❌ Aucun code-barres détecté après toutes les tentatives")
+                barcodes = []
             
             for i, barcode in enumerate(barcodes):
-                logger.debug(f"  📊 Traitement du code-barres {i+1}/{len(barcodes)}")
                 # Décodage des données
                 barcode_data = barcode.data.decode('utf-8')
                 barcode_type = barcode.type
-                logger.debug(f"    ℹ️ Type: {barcode_type}, Données: '{barcode_data}'")
                 
                 # Coordonnées du rectangle
                 points = barcode.polygon
@@ -293,7 +257,6 @@ async def detect_barcodes_base64(data: Dict[str, str]):
     global request_counter
     request_counter += 1
     request_start = time.time()
-    logger.info(f"🚀 Requête #{request_counter} /detect_base64")
     
     try:
         if "image" not in data:
@@ -301,9 +264,7 @@ async def detect_barcodes_base64(data: Dict[str, str]):
             raise HTTPException(status_code=400, detail="Champ 'image' requis")
         
         # Décodage base64
-        logger.info(f"🔓 Décodage base64 - Taille: {len(data['image'])} caractères")
         image_data = base64.b64decode(data["image"])
-        logger.info(f"💾 Image décodée - Taille: {len(image_data)} bytes")
         
         # Conversion en image OpenCV
         nparr = np.frombuffer(image_data, np.uint8)

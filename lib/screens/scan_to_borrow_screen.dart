@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/constants/app_constants.dart';
 import '../widgets/scanner/python_barcode_scanner.dart';
+import '../widgets/books/book_info_card.dart';
 import '../models/models.dart';
+import '../services/services.dart';
+import '../services/database/database_helper.dart';
 
 /// Écran pour scanner et emprunter un livre
 class ScanToBorrowScreen extends StatefulWidget {
@@ -12,9 +16,34 @@ class ScanToBorrowScreen extends StatefulWidget {
 }
 
 class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
+  late final LocalDatabaseService _localDbService;
+  
   Book? _scannedBook;
+  BookGroup? _bookGroup;
   String? _borrowerName;
+  ClassRoom? _selectedClass;
+  List<ClassRoom> _allClasses = [];
   bool _isProcessing = false;
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _localDbService = context.read<LocalDatabaseService>();
+    _loadClasses();
+  }
+
+  Future<void> _loadClasses() async {
+    try {
+      final classes = await DatabaseHelper().getAllClasses();
+      if (mounted) {
+        setState(() {
+          _allClasses = classes;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des classes: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,32 +71,10 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Informations du livre
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppConstants.paddingMedium),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Livre sélectionné',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: AppConstants.paddingSmall),
-                  Text(
-                    _scannedBook!.title,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  Text(
-                    'par ${_scannedBook!.author}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  Text(
-                    'ISBN: ${_scannedBook!.isbn}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
+          BookInfoCard(
+            book: _scannedBook!,
+            showGroupInfo: _bookGroup != null,
+            group: _bookGroup,
           ),
           
           const SizedBox(height: AppConstants.paddingMedium),
@@ -100,28 +107,32 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
                   
                   const SizedBox(height: AppConstants.paddingMedium),
                   
-                  Container(
-                    padding: const EdgeInsets.all(AppConstants.paddingMedium),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(AppConstants.radiusSmall),
+                  DropdownButtonFormField<ClassRoom>(
+                    decoration: const InputDecoration(
+                      labelText: 'Classe (optionnelle)',
+                      hintText: 'Sélectionnez une classe',
+                      prefixIcon: Icon(Icons.school),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: AppConstants.paddingSmall),
-                        Expanded(
-                          child: Text(
-                            'Durée d\'emprunt: 14 jours\nDate de retour: ${DateTime.now().add(AppConstants.defaultLoanDuration).day}/${DateTime.now().add(AppConstants.defaultLoanDuration).month}/${DateTime.now().add(AppConstants.defaultLoanDuration).year}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
+                    value: _selectedClass,
+                    items: [
+                      const DropdownMenuItem<ClassRoom>(
+                        value: null,
+                        child: Text('Aucune classe'),
+                      ),
+                      ..._allClasses.map((classRoom) {
+                        return DropdownMenuItem<ClassRoom>(
+                          value: classRoom,
+                          child: Text(classRoom.name),
+                        );
+                      }),
+                    ],
+                    onChanged: (ClassRoom? value) {
+                      setState(() {
+                        _selectedClass = value;
+                      });
+                    },
                   ),
+                  
                 ],
               ),
             ),
@@ -177,16 +188,128 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
            !_isProcessing;
   }
 
-  void _handleBarcodeScanned(String code) {
-    // TODO: Rechercher le livre dans la base de données locale
+  Future<void> _handleBarcodeScanned(String code) async {
     setState(() {
-      _scannedBook = Book(
-        isbn: code,
-        title: 'Livre scanné',
-        author: 'Auteur du livre',
-        status: BookStatus.available,
-      );
+      _isProcessing = true;
     });
+
+    try {
+      // Rechercher le livre dans la base de données locale
+      final results = await _localDbService.searchBooks('isbn', code);
+      
+      if (results.isEmpty) {
+        // Livre NON référencé → Afficher erreur
+        setState(() {
+          _isProcessing = false;
+        });
+        
+        // Afficher un dialog avec message clair
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 32),
+                  SizedBox(width: 12),
+                  Text('Livre non référencé'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Ce livre n\'est pas encore enregistré dans la bibliothèque.',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Veuillez d\'abord ranger ce livre en utilisant l\'option "Ranger un livre".',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    // Retourner à l'accueil pour aller vers "Ranger un livre"
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Aller ranger le livre'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Scanner un autre'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        // Livre trouvé → Continuer le processus d'emprunt
+        final book = results.first;
+        
+        // Charger le groupe du livre si disponible
+        BookGroup? group;
+        if (book.groupId != null && book.groupId!.isNotEmpty) {
+          try {
+            final groups = await _localDbService.getAllBookGroups();
+            group = groups.firstWhere((g) => g.id == book.groupId);
+          } catch (e) {
+            print('Groupe non trouvé pour le livre: $e');
+          }
+        }
+        
+        // Vérifier si le livre est disponible
+        if (book.status != BookStatus.available) {
+          setState(() {
+            _isProcessing = false;
+          });
+          
+          // Afficher un dialog détaillé si le livre est déjà emprunté
+          if (mounted) {
+            _showBookAlreadyBorrowedDialog(book);
+          }
+        } else {
+          setState(() {
+            _scannedBook = book;
+            _bookGroup = group;
+            _isProcessing = false;
+          });
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isProcessing = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _confirmBorrow() async {
@@ -197,15 +320,41 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
     });
 
     try {
-      // TODO: Enregistrer l'emprunt dans la base de données
-      _scannedBook!.borrow(_borrowerName!.trim());
+      // Emprunter le livre
+      _scannedBook!.borrow(
+        _borrowerName!.trim(),
+        className: _selectedClass?.name,
+      );
+      
+      // Enregistrer dans la base de données locale
+      await _localDbService.updateBook(_scannedBook!);
+      
+      // Créer un enregistrement dans l'historique
+      final borrowHistory = BorrowHistory(
+        isbn: _scannedBook!.isbn,
+        bookTitle: _scannedBook!.title,
+        borrowerName: _borrowerName!.trim(),
+        classId: _selectedClass?.id,
+        className: _selectedClass?.name,
+        borrowedAt: DateTime.now(),
+      );
+      
+      // Ajouter dans la base locale et récupérer l'ID généré
+      final generatedId = await DatabaseHelper().addBorrowHistory(borrowHistory);
+      
+      // Créer une copie avec l'ID généré pour la synchronisation
+      final borrowHistoryWithId = borrowHistory.copyWith(id: generatedId);
+      
+      // Synchroniser avec Google Sheets (en arrière-plan, sans bloquer l'utilisateur)
+      _syncBorrowHistoryToSheets(borrowHistoryWithId);
       
       // Afficher la confirmation
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Livre emprunté par ${_borrowerName!.trim()}'),
-            backgroundColor: Theme.of(context).colorScheme.secondary,
+            content: Text('✅ Livre emprunté par ${_borrowerName!.trim()}'),
+            backgroundColor: Colors.green.shade600,
+            duration: const Duration(seconds: 3),
           ),
         );
         
@@ -216,8 +365,8 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text('❌ Erreur: $e'),
+            backgroundColor: Colors.red.shade600,
           ),
         );
       }
@@ -230,10 +379,193 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
     }
   }
 
+  /// Synchronise l'historique d'emprunt avec Google Sheets (en arrière-plan)
+  Future<void> _syncBorrowHistoryToSheets(BorrowHistory history) async {
+    try {
+      final sheetsService = context.read<GoogleSheetsService>();
+      await sheetsService.addBorrowHistory(history);
+      print('✅ Historique synchronisé avec Google Sheets');
+    } catch (e) {
+      print('⚠️ Erreur de synchronisation avec Google Sheets: $e');
+      // Ne pas bloquer l'utilisateur en cas d'erreur de synchronisation
+    }
+  }
+
+  /// Affiche un dialog détaillé quand le livre est déjà emprunté
+  void _showBookAlreadyBorrowedDialog(Book book) {
+    final borrowedDate = book.borrowedDate;
+    final borrowedDateStr = borrowedDate != null
+        ? '${borrowedDate.day.toString().padLeft(2, '0')}/${borrowedDate.month.toString().padLeft(2, '0')}/${borrowedDate.year} à ${borrowedDate.hour.toString().padLeft(2, '0')}:${borrowedDate.minute.toString().padLeft(2, '0')}'
+        : 'Date inconnue';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.block, color: Colors.red.shade600, size: 32),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Livre déjà emprunté',
+                style: TextStyle(fontSize: 20),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Titre du livre
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.book, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            book.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            book.author,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Message principal
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.red.shade700),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Ce livre est actuellement emprunté',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Informations d'emprunt
+                    _buildBorrowInfoRow('Emprunté par', book.borrowedBy ?? 'Inconnu'),
+                    const SizedBox(height: 8),
+                    if (book.borrowerClassName != null)
+                      _buildBorrowInfoRow('Classe', book.borrowerClassName!),
+                    if (book.borrowerClassName != null)
+                      const SizedBox(height: 8),
+                    _buildBorrowInfoRow('Date d\'emprunt', borrowedDateStr),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Instructions
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.lightbulb_outline, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ce livre doit d\'abord être retourné et rangé avant de pouvoir être emprunté à nouveau.',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK, compris'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Widget pour afficher une ligne d'information d'emprunt
+  Widget _buildBorrowInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _scanAnother() {
     setState(() {
       _scannedBook = null;
+      _bookGroup = null;
       _borrowerName = null;
+      _selectedClass = null;
       _isProcessing = false;
     });
   }

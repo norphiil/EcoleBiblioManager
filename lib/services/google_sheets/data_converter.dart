@@ -19,8 +19,8 @@ class DataConverter {
       groupId: row['groupId']?.toString(),
       status: _toBookStatus(row['status']?.toString() ?? ''),
       borrowedBy: row['borrowedBy']?.toString(),
+      borrowerClassName: row['borrowerClassName']?.toString(),
       borrowedDate: _toDateTime(row['borrowedDate']?.toString()),
-      dueDate: _toDateTime(row['dueDate']?.toString()),
     );
   }
 
@@ -38,8 +38,8 @@ class DataConverter {
       'groupId': book.groupId ?? '',
       'status': book.status.name,
       'borrowedBy': book.borrowedBy ?? '',
+      'borrowerClassName': book.borrowerClassName ?? '',
       'borrowedDate': book.borrowedDate?.toIso8601String() ?? '',
-      'dueDate': book.dueDate?.toIso8601String() ?? '',
     };
   }
 
@@ -51,6 +51,8 @@ class DataConverter {
       title: row['title']?.toString() ?? '',
       key: row['key']?.toString() ?? '',
       logoPath: row['logoPath']?.toString(),
+      svgData: row['svgData']?.toString().isNotEmpty == true ? row['svgData']?.toString() : null,
+      groupColor: row['groupColor']?.toString().isNotEmpty == true ? row['groupColor']?.toString() : null,
       keywords: _splitString(row['keywords']?.toString() ?? ''),
       description: row['description']?.toString(),
     );
@@ -62,8 +64,54 @@ class DataConverter {
       'title': group.title,
       'key': group.key,
       'logoPath': group.logoPath ?? '',
+      'svgData': group.svgData ?? '',
+      'groupColor': group.groupColor ?? '',
       'keywords': group.keywords.join('|'),
       'description': group.description ?? '',
+    };
+  }
+
+  // === CLASSROOM ===
+  
+  static ClassRoom toClassRoom(Map<String, dynamic> row) {
+    return ClassRoom(
+      id: row['id']?.toString() ?? '',
+      name: row['name']?.toString() ?? '',
+    );
+  }
+
+  static Map<String, dynamic> fromClassRoom(ClassRoom classRoom) {
+    return {
+      'id': classRoom.id,
+      'name': classRoom.name,
+    };
+  }
+
+  // === BORROW HISTORY ===
+  
+  static BorrowHistory toBorrowHistory(Map<String, dynamic> row) {
+    return BorrowHistory(
+      id: row['id']?.toString() ?? '',
+      isbn: row['isbn']?.toString() ?? '',
+      bookTitle: row['bookTitle']?.toString() ?? '',
+      borrowerName: row['borrowerName']?.toString() ?? '',
+      classId: row['classId']?.toString(),
+      className: row['className']?.toString(),
+      borrowedAt: _toDateTime(row['borrowedAt']?.toString()) ?? DateTime.now(),
+      returnedAt: _toDateTime(row['returnedAt']?.toString()),
+    );
+  }
+
+  static Map<String, dynamic> fromBorrowHistory(BorrowHistory history) {
+    return {
+      'id': history.id ?? '', // Assurer que l'ID n'est jamais null
+      'isbn': history.isbn,
+      'bookTitle': history.bookTitle,
+      'borrowerName': history.borrowerName,
+      'classId': history.classId ?? '',
+      'className': history.className ?? '',
+      'borrowedAt': history.borrowedAt.toIso8601String(),
+      'returnedAt': history.returnedAt?.toIso8601String() ?? '',
     };
   }
 

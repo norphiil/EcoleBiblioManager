@@ -18,8 +18,8 @@ class Book extends Synchronizable {
   // Statut du livre
   BookStatus status;
   String? borrowedBy;
+  String? borrowerClassName; // Classe de l'emprunteur actuel
   DateTime? borrowedDate;
-  DateTime? dueDate;
   
   // Métadonnées
   DateTime? lastModified;
@@ -39,8 +39,8 @@ class Book extends Synchronizable {
     this.groupId,
     this.status = BookStatus.available,
     this.borrowedBy,
+    this.borrowerClassName,
     this.borrowedDate,
-    this.dueDate,
     this.lastModified,
   }) : _isDirty = false;
 
@@ -63,6 +63,7 @@ class Book extends Synchronizable {
 
   /// Constructeur depuis les données Google Sheets
   factory Book.fromSheetRow(List<dynamic> row) {
+    // Note: borrowHistory n'est plus stocké dans Book mais dans une table séparée
     return Book(
       isbn: row.isNotEmpty ? row[0]?.toString() ?? '' : '',
       title: row.length > 1 ? row[1]?.toString() ?? '' : '',
@@ -76,8 +77,8 @@ class Book extends Synchronizable {
       groupId: row.length > 9 && row[9]?.toString().isNotEmpty == true ? row[9].toString() : null,
       status: row.length > 10 ? BookStatus.fromString(row[10]?.toString() ?? 'available') : BookStatus.available,
       borrowedBy: row.length > 11 && row[11]?.toString().isNotEmpty == true ? row[11].toString() : null,
-      borrowedDate: row.length > 12 && row[12]?.toString().isNotEmpty == true ? DateTime.tryParse(row[12].toString()) : null,
-      dueDate: row.length > 13 && row[13]?.toString().isNotEmpty == true ? DateTime.tryParse(row[13].toString()) : null,
+      borrowerClassName: row.length > 12 && row[12]?.toString().isNotEmpty == true ? row[12].toString() : null,
+      borrowedDate: row.length > 13 && row[13]?.toString().isNotEmpty == true ? DateTime.tryParse(row[13].toString()) : null,
       lastModified: row.length > 14 && row[14]?.toString().isNotEmpty == true ? DateTime.tryParse(row[14].toString()) : null,
     );
   }
@@ -162,8 +163,8 @@ class Book extends Synchronizable {
       'groupId': groupId,
       'status': status.toString(),
       'borrowedBy': borrowedBy,
+      'borrowerClassName': borrowerClassName,
       'borrowedDate': borrowedDate?.toIso8601String(),
-      'dueDate': dueDate?.toIso8601String(),
       'lastModified': lastModified?.toIso8601String(),
     };
   }
@@ -183,8 +184,8 @@ class Book extends Synchronizable {
       groupId ?? '',
       status.toString(),
       borrowedBy ?? '',
+      borrowerClassName ?? '',
       borrowedDate?.toIso8601String() ?? '',
-      dueDate?.toIso8601String() ?? '',
       lastModified?.toIso8601String() ?? DateTime.now().toIso8601String(),
     ];
   }
@@ -219,24 +220,25 @@ class Book extends Synchronizable {
   Map<String, dynamic> getChanges() => Map.from(_changes);
 
   /// Emprunte le livre
-  void borrow(String borrowerName, {Duration loanDuration = const Duration(days: 14)}) {
+  void borrow(String borrowerName, {String? className}) {
     if (status != BookStatus.available) {
       throw BookException('Le livre n\'est pas disponible pour l\'emprunt');
     }
     
+    final now = DateTime.now();
     status = BookStatus.borrowed;
     borrowedBy = borrowerName;
-    borrowedDate = DateTime.now();
-    dueDate = borrowedDate!.add(loanDuration);
-    setLastModified(DateTime.now());
+    borrowerClassName = className;
+    borrowedDate = now;
+    setLastModified(now);
   }
 
   /// Rend le livre
   void returnBook() {
     status = BookStatus.available;
     borrowedBy = null;
+    borrowerClassName = null;
     borrowedDate = null;
-    dueDate = null;
     setLastModified(DateTime.now());
   }
 
@@ -266,8 +268,8 @@ class Book extends Synchronizable {
     String? groupId,
     BookStatus? status,
     String? borrowedBy,
+    String? borrowerClassName,
     DateTime? borrowedDate,
-    DateTime? dueDate,
   }) {
     return Book(
       isbn: isbn ?? this.isbn,
@@ -282,8 +284,8 @@ class Book extends Synchronizable {
       groupId: groupId ?? this.groupId,
       status: status ?? this.status,
       borrowedBy: borrowedBy ?? this.borrowedBy,
+      borrowerClassName: borrowerClassName ?? this.borrowerClassName,
       borrowedDate: borrowedDate ?? this.borrowedDate,
-      dueDate: dueDate ?? this.dueDate,
       lastModified: DateTime.now(),
     );
   }

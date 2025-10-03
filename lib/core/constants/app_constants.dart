@@ -63,6 +63,7 @@ class AppRoutes {
   static const String bookDetails = '/book-details';
   static const String shelveBook = '/shelve-book';
   static const String groupManagement = '/group-management';
+  static const String classManagement = '/class-management';
   static const String userManagement = '/user-management';
   static const String settings = '/settings';
 }

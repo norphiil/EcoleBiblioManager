@@ -3,12 +3,16 @@ import '../../models/models.dart';
 import 'api_client.dart';
 import 'books_operations.dart';
 import 'groups_operations.dart';
+import 'classes_operations.dart';
+import 'borrow_history_operations.dart';
 
 /// Service principal Google Sheets
 class GoogleSheetsService {
   GoogleSheetsApiClient? _client;
   BooksOperations? books;
   GroupsOperations? groups;
+  ClassesOperations? classes;
+  BorrowHistoryOperations? borrowHistory;
   bool _initialized = false;
 
   /// Initialise le service
@@ -22,10 +26,14 @@ class GoogleSheetsService {
 
     final booksSheet = dotenv.env['BOOKS_SHEET_NAME'] ?? 'Livres';
     final groupsSheet = dotenv.env['GROUPS_SHEET_NAME'] ?? 'Groupes';
+    final classesSheet = dotenv.env['CLASSES_SHEET_NAME'] ?? 'Classes';
+    final borrowHistorySheet = dotenv.env['BORROW_HISTORY_SHEET_NAME'] ?? 'Historique';
 
     _client = GoogleSheetsApiClient(scriptUrl);
     books = BooksOperations(_client!, booksSheet);
     groups = GroupsOperations(_client!, groupsSheet);
+    classes = ClassesOperations(_client!, classesSheet);
+    borrowHistory = BorrowHistoryOperations(_client!, borrowHistorySheet);
 
     // Test de connexion
     await _client!.testConnection();
@@ -53,4 +61,22 @@ class GoogleSheetsService {
   Future<BookGroup> updateBookGroup(BookGroup group) => groups!.update(group);
   Future<void> deleteBookGroup(String id) => groups!.delete(id);
   Future<List<BookGroup>> searchBookGroups(String field, String value) => groups!.search(field, value);
+
+  // === CLASSES ===
+
+  Future<List<ClassRoom>> getAllClasses() => classes!.getAll();
+  Future<ClassRoom> addClass(ClassRoom classRoom) => classes!.add(classRoom);
+  Future<ClassRoom> updateClass(ClassRoom classRoom) => classes!.update(classRoom);
+  Future<void> deleteClass(String id) => classes!.delete(id);
+  Future<List<ClassRoom>> searchClasses(String field, String value) => classes!.search(field, value);
+
+  // === HISTORIQUE DES EMPRUNTS ===
+
+  Future<List<BorrowHistory>> getAllBorrowHistory() => borrowHistory!.getAll();
+  Future<BorrowHistory> addBorrowHistory(BorrowHistory history) => borrowHistory!.add(history);
+  Future<BorrowHistory> updateBorrowHistory(BorrowHistory history) => borrowHistory!.update(history);
+  Future<void> deleteBorrowHistory(String id) => borrowHistory!.delete(id);
+  Future<List<BorrowHistory>> searchBorrowHistory(String field, String value) => borrowHistory!.search(field, value);
+  Future<List<BorrowHistory>> getBorrowHistoryByIsbn(String isbn) => borrowHistory!.getByIsbn(isbn);
+  Future<List<BorrowHistory>> getBorrowHistoryByClassId(String classId) => borrowHistory!.getByClassId(classId);
 }

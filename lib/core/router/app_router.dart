@@ -3,9 +3,12 @@ import 'package:go_router/go_router.dart';
 import '../../screens/home_screen.dart';
 import '../../screens/scan_to_shelve_screen.dart';
 import '../../screens/scan_to_borrow_screen.dart';
+import '../../screens/search_book_screen.dart';
 import '../../screens/book_info_screen.dart';
 import '../../screens/shelve_book_screen.dart';
 import '../../screens/groups_management_screen.dart';
+import '../../screens/class_management_screen.dart';
+import '../../models/book.dart';
 import '../constants/app_constants.dart';
 
 /// Configuration de la navigation de l'application
@@ -34,11 +37,21 @@ class AppRouter {
         builder: (context, state) => const ScanToBorrowScreen(),
       ),
       
+      // Page de recherche de livre
+      GoRoute(
+        path: '/search-book',
+        name: 'search-book',
+        builder: (context, state) => const SearchBookScreen(),
+      ),
+      
       // Informations sur un livre
       GoRoute(
         path: AppRoutes.bookInfo,
         name: 'book-info',
-        builder: (context, state) => const BookInfoScreen(),
+        builder: (context, state) {
+          final book = state.extra as Book?;
+          return BookInfoScreen(book: book);
+        },
       ),
 
       // Ranger un livre (avec ISBN optionnel)
@@ -66,6 +79,13 @@ class AppRouter {
         path: AppRoutes.groupManagement,
         name: 'group-management',
         builder: (context, state) => const GroupsManagementScreen(),
+      ),
+
+      // Gestion des classes
+      GoRoute(
+        path: AppRoutes.classManagement,
+        name: 'class-management',
+        builder: (context, state) => const ClassManagementScreen(),
       ),
     ],
     

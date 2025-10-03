@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:math';
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import '../core/constants/app_constants.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import '../widgets/svg_logo_widget.dart';
 
 /// Écran de gestion des groupes de livres
 class GroupsManagementScreen extends StatefulWidget {
@@ -15,7 +20,7 @@ class GroupsManagementScreen extends StatefulWidget {
 }
 
 class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
-  late final GoogleSheetsService _sheetsService;
+  late final LocalDatabaseService _localDbService;
   
   List<BookGroup> _groups = [];
   List<Book> _allBooks = [];
@@ -26,7 +31,7 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _sheetsService = context.read<GoogleSheetsService>();
+    _localDbService = context.read<LocalDatabaseService>();
     _loadData();
   }
 
@@ -38,8 +43,8 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
 
     try {
       final results = await Future.wait([
-        _sheetsService.getAllBookGroups(),
-        _sheetsService.getAllBooks(),
+        _localDbService.getAllBookGroups(),
+        _localDbService.getAllBooks(),
       ]);
 
       setState(() {
@@ -203,18 +208,13 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: group.logoPath != null
-              ? ClipOval(
-                  child: Image.network(
-                    group.logoPath!,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
-                  ),
-                )
-              : Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
+          child: SvgLogoWidget(
+            svgData: group.svgData,
+            colorHex: group.groupColor,
+            width: 40,
+            height: 40,
+            fallback: Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
+          ),
         ),
         title: Text(
           group.title,
@@ -399,7 +399,7 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
     print('📤 Envoi de la requête addBookGroup...');
     
     try {
-      await _sheetsService.addBookGroup(group);
+      await _localDbService.addBookGroup(group);
       print('✅ Groupe créé avec succès');
       
       if (mounted) {
@@ -445,7 +445,7 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
     });
     
     try {
-      await _sheetsService.updateBookGroup(group);
+      await _localDbService.updateBookGroup(group);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -501,14 +501,14 @@ class _GroupsManagementScreenState extends State<GroupsManagementScreen> {
           groupId: null, // Supprimer l'association
           status: book.status,
           borrowedBy: book.borrowedBy,
+          borrowerClassName: book.borrowerClassName,
           borrowedDate: book.borrowedDate,
-          dueDate: book.dueDate,
         );
-        await _sheetsService.updateBook(updatedBook);
+        await _localDbService.updateBook(updatedBook);
       }
       
       // Puis supprimer le groupe
-      await _sheetsService.deleteBookGroup(group.id);
+      await _localDbService.deleteBookGroup(group.id);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -578,9 +578,10 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _logoPathController = TextEditingController();
   
   List<String> _selectedKeywords = [];
+  String? _svgData; // Base64 encoded SVG
+  Color _groupColor = Colors.blue; // Couleur par défaut
 
   @override
   void initState() {
@@ -588,8 +589,14 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
     if (widget.group != null) {
       _titleController.text = widget.group!.title;
       _descriptionController.text = widget.group!.description ?? '';
-      _logoPathController.text = widget.group!.logoPath ?? '';
       _selectedKeywords = List.from(widget.group!.keywords);
+      _svgData = widget.group!.svgData;
+      
+      // Parser la couleur depuis le format hex
+      if (widget.group!.groupColor != null) {
+        final colorString = widget.group!.groupColor!.replaceAll('#', '');
+        _groupColor = Color(int.parse('FF$colorString', radix: 16));
+      }
     }
   }
 
@@ -628,13 +635,9 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
                   maxLines: 3,
                 ),
                 const SizedBox(height: AppConstants.paddingMedium),
-                TextFormField(
-                  controller: _logoPathController,
-                  decoration: const InputDecoration(
-                    labelText: 'URL de l\'image/logo',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+                _buildSvgLogoSection(),
+                const SizedBox(height: AppConstants.paddingMedium),
+                _buildColorPickerSection(),
                 const SizedBox(height: AppConstants.paddingMedium),
                 _buildKeywordsSection(),
               ],
@@ -652,6 +655,247 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
           child: const Text('Enregistrer'),
         ),
       ],
+    );
+  }
+
+  Widget _buildSvgLogoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Logo SVG',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        
+        // Aperçu du logo avec la couleur
+        if (_svgData != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: SvgLogoWidget(
+                    svgData: _svgData,
+                    colorHex: '#${_groupColor.red.toRadixString(16).padLeft(2, '0')}'
+                        '${_groupColor.green.toRadixString(16).padLeft(2, '0')}'
+                        '${_groupColor.blue.toRadixString(16).padLeft(2, '0')}',
+                    width: 80,
+                    height: 80,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        
+        // Boutons d'action
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _svgData != null ? 'Logo SVG chargé ✓' : 'Aucun logo SVG',
+                  style: TextStyle(
+                    color: _svgData != null ? Colors.green : Colors.grey,
+                    fontWeight: _svgData != null ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: _pickSvgFile,
+              icon: const Icon(Icons.file_upload),
+              label: Text(_svgData != null ? 'Changer' : 'Choisir SVG'),
+            ),
+            if (_svgData != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                tooltip: 'Supprimer le logo',
+                onPressed: () {
+                  setState(() {
+                    _svgData = null;
+                  });
+                },
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorPickerSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Couleur du groupe',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _groupColor,
+                border: Border.all(color: Colors.grey.shade300, width: 2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: _showColorPicker,
+              icon: const Icon(Icons.palette),
+              label: const Text('Choisir la couleur'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickSvgFile() async {
+    try {
+      print('🎨 Ouverture du file picker SVG...');
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['svg'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        print('📁 Fichier sélectionné: ${result.files.single.path}');
+        // Lire le fichier SVG depuis le path (Windows compatible)
+        final file = File(result.files.single.path!);
+        final svgString = await file.readAsString();
+        print('📄 Contenu SVG lu: ${svgString.length} caractères');
+        final base64Svg = base64Encode(utf8.encode(svgString));
+        print('🔐 Base64 encodé: ${base64Svg.length} caractères');
+        
+        setState(() {
+          _svgData = base64Svg;
+          print('✅ _svgData mis à jour dans setState');
+        });
+        
+        print('📊 État actuel - _svgData: ${_svgData != null ? "${_svgData!.length} chars" : "null"}');
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Logo SVG chargé avec succès')),
+          );
+        }
+      } else {
+        print('❌ Aucun fichier sélectionné ou path null');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du chargement du SVG: $e')),
+        );
+      }
+    }
+  }
+
+  void _showColorPicker() {
+    print('🎨 Ouverture du color picker, couleur actuelle: $_groupColor');
+    Color tempColor = _groupColor;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Text('Choisir une couleur'),
+                  const Spacer(),
+                  // Aperçu du logo avec la couleur en temps réel
+                  if (_svgData != null)
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: SvgLogoWidget(
+                          svgData: _svgData,
+                          colorHex: '#${tempColor.red.toRadixString(16).padLeft(2, '0')}'
+                              '${tempColor.green.toRadixString(16).padLeft(2, '0')}'
+                              '${tempColor.blue.toRadixString(16).padLeft(2, '0')}',
+                          width: 35,
+                          height: 35,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: ColorPicker(
+                  pickerColor: tempColor,
+                  onColorChanged: (Color color) {
+                    print('🎨 Couleur changée: $color');
+                    setDialogState(() {
+                      tempColor = color;
+                    });
+                  },
+                  pickerAreaHeightPercent: 0.8,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _groupColor = tempColor;
+                      print('✅ _groupColor mis à jour: $_groupColor');
+                    });
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -697,7 +941,13 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
                 .where((keyword) => !_selectedKeywords.contains(keyword))
                 .take(10)
                 .map((keyword) => ActionChip(
-                  label: Text(keyword, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    keyword,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                   onPressed: () {
                     setState(() {
                       _selectedKeywords.add(keyword);
@@ -729,12 +979,19 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
                 children: widget.suggestedKeywords
                     .where((keyword) => !_selectedKeywords.contains(keyword))
                     .map((keyword) => ActionChip(
-                      label: Text(keyword, style: const TextStyle(fontSize: 11)),
+                      label: Text(
+                        keyword,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        ),
+                      ),
                       onPressed: () {
                         setState(() {
                           _selectedKeywords.add(keyword);
                         });
                       },
+                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
                     )).toList(),
               ),
             ),
@@ -754,15 +1011,31 @@ class _GroupFormDialogState extends State<GroupFormDialog> {
       return;
     }
 
+    print('💾 _saveGroup appelé');
+    print('📊 État actuel:');
+    print('  - _svgData: ${_svgData != null ? "${_svgData!.length} chars" : "null"}');
+    print('  - _groupColor: $_groupColor');
+
+    // Convertir la couleur en format hex (#RRGGBB)
+    final colorHex = '#${_groupColor.red.toRadixString(16).padLeft(2, '0')}'
+        '${_groupColor.green.toRadixString(16).padLeft(2, '0')}'
+        '${_groupColor.blue.toRadixString(16).padLeft(2, '0')}';
+    print('  - colorHex: $colorHex');
+
     final group = BookGroup(
       id: widget.group?.id ?? _generateUuid(),
       title: _titleController.text.trim(),
       key: _titleController.text.trim().toLowerCase().replaceAll(' ', '_'),
-      logoPath: _logoPathController.text.trim().isEmpty ? null : _logoPathController.text.trim(),
+      logoPath: null, // Plus utilisé, on garde SVG uniquement
       keywords: _selectedKeywords,
       description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+      svgData: _svgData,
+      groupColor: colorHex,
     );
 
+    print('💾 BookGroup créé:');
+    print('  - svgData: ${group.svgData != null ? "${group.svgData!.length} chars" : "null"}');
+    print('  - groupColor: ${group.groupColor}');
     print('💾 GroupFormDialog - Appel onSave pour: ${group.title} (ID: ${group.id})');
     widget.onSave(group);
     Navigator.of(context).pop();

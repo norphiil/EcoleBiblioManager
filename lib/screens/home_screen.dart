@@ -17,11 +17,39 @@ class HomeScreen extends StatelessWidget {
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 4,
         actions: [
-          // Bouton de gestion des groupes
-          IconButton(
-            onPressed: () => context.go(AppRoutes.groupManagement),
+          // Menu paramètres
+          PopupMenuButton<String>(
             icon: const Icon(Icons.settings),
-            tooltip: 'Gestion des groupes',
+            tooltip: 'Paramètres',
+            onSelected: (value) {
+              if (value == 'groups') {
+                context.go(AppRoutes.groupManagement);
+              } else if (value == 'classes') {
+                context.go(AppRoutes.classManagement);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'groups',
+                child: Row(
+                  children: [
+                    Icon(Icons.folder, size: 20),
+                    SizedBox(width: 12),
+                    Text('Gestion des groupes'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'classes',
+                child: Row(
+                  children: [
+                    Icon(Icons.school, size: 20),
+                    SizedBox(width: 12),
+                    Text('Gestion des classes'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -31,7 +59,7 @@ class HomeScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
               Theme.of(context).colorScheme.surface,
             ],
           ),
@@ -87,7 +115,7 @@ class HomeScreen extends StatelessWidget {
             Text(
               'Que souhaitez-vous faire aujourd\'hui ?',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
               ),
               textAlign: TextAlign.center,
             ),
@@ -123,11 +151,11 @@ class HomeScreen extends StatelessWidget {
         
         ActionCard(
           key: AppKeys.bookInfoButtonKey,
-          title: 'Informations livre',
-          subtitle: 'Consulter les détails d\'un livre',
-          icon: Icons.info,
+          title: 'Rechercher un livre',
+          subtitle: 'Rechercher ou scanner un livre',
+          icon: Icons.search,
           color: Theme.of(context).colorScheme.tertiary,
-          onTap: () => context.push(AppRoutes.bookInfo),
+          onTap: () => context.push('/search-book'),
         ),
         
       ],
@@ -143,13 +171,13 @@ class HomeScreen extends StatelessWidget {
           Icon(
             Icons.info_outline,
             size: 16,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
           ),
           const SizedBox(width: 4),
           Text(
             'Version 1.0.0',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],

@@ -20,7 +20,9 @@ const SPREADSHEET_ID = '17EjJAybIlPFzfbXdZ02Kyf5eYE-BStF0Ht1HWxEdKMo';
 // Noms des feuilles
 const SHEETS = {
   BOOKS: 'Livres',
-  GROUPS: 'Groupes'
+  GROUPS: 'Groupes',
+  CLASSES: 'Classes',
+  BORROW_HISTORY: 'Historique'
 };
 
 /**
@@ -123,14 +125,25 @@ function initializeAllSheets() {
   results.books = initializeSheet(spreadsheet, SHEETS.BOOKS, [
     'isbn', 'title', 'author', 'publisher', 'publishYear', 
     'publishPlace', 'subjects', 'pageCount', 'coverImageUrl', 
-    'groupId', 'status', 'borrowedBy', 'borrowedDate', 'dueDate', 
+    'groupId', 'status', 'borrowedBy', 'borrowerClassName', 'borrowedDate', 
     'createdAt', 'updatedAt'
   ]);
   
   // Initialise la feuille des groupes
   results.groups = initializeSheet(spreadsheet, SHEETS.GROUPS, [
-    'id', 'title', 'key', 'logoPath', 'keywords', 'description', 
+    'id', 'title', 'key', 'logoPath', 'svgData', 'groupColor', 'keywords', 'description', 
     'createdAt', 'updatedAt'
+  ]);
+  
+  // Initialise la feuille des classes
+  results.classes = initializeSheet(spreadsheet, SHEETS.CLASSES, [
+    'id', 'name'
+  ]);
+  
+  // Initialise la feuille de l'historique des emprunts
+  results.borrowHistory = initializeSheet(spreadsheet, SHEETS.BORROW_HISTORY, [
+    'id', 'isbn', 'bookTitle', 'borrowerName', 'classId', 'className',
+    'borrowedAt', 'returnedAt'
   ]);
   
   return results;
@@ -218,7 +231,7 @@ function addRow(sheetName, rowData) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   
   // Pour les livres, l'ISBN est l'identifiant unique
-  // Pour les groupes, on génère toujours un ID
+  // Pour les groupes et classes, on génère toujours un ID
   let identifierField = 'id';
   let identifierValue = rowData.id;
   
@@ -230,7 +243,7 @@ function addRow(sheetName, rowData) {
       throw new Error('ISBN obligatoire pour ajouter un livre');
     }
   } else {
-    // Pour les groupes, génère un ID si pas fourni
+    // Pour les groupes et classes, génère un ID si pas fourni
     if (!identifierValue) {
       identifierValue = Utilities.getUuid();
       rowData.id = identifierValue;

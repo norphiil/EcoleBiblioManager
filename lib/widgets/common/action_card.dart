@@ -36,7 +36,7 @@ class ActionCard extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      color.withOpacity(0.8),
+                      color.withValues(alpha: 0.8),
                       color,
                     ],
                   )
@@ -51,7 +51,7 @@ class ActionCard extends StatelessWidget {
                 padding: const EdgeInsets.all(AppConstants.paddingMedium),
                 decoration: BoxDecoration(
                   color: enabled 
-                      ? Colors.white.withOpacity(0.2)
+                      ? Colors.white.withValues(alpha: 0.2)
                       : Colors.grey[400],
                   shape: BoxShape.circle,
                 ),
@@ -83,7 +83,7 @@ class ActionCard extends StatelessWidget {
                 subtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: enabled 
-                      ? Colors.white.withOpacity(0.9)
+                      ? Colors.white.withValues(alpha: 0.9)
                       : Colors.grey[500],
                 ),
                 textAlign: TextAlign.center,
@@ -126,8 +126,8 @@ class CompactActionCard extends StatelessWidget {
       ),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: color?.withOpacity(0.1) ?? 
-                           Theme.of(context).primaryColor.withOpacity(0.1),
+          backgroundColor: color?.withValues(alpha: 0.1) ?? 
+                           Theme.of(context).primaryColor.withValues(alpha: 0.1),
           child: Icon(
             icon,
             color: color ?? Theme.of(context).primaryColor,

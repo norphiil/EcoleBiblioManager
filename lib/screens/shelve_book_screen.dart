@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import '../services/database/database_helper.dart';
+import '../widgets/books/book_info_card.dart';
+import '../widgets/svg_logo_widget.dart';
+import 'edit_book_screen.dart';
 
 class ShelveBookScreen extends StatefulWidget {
   final String? scannedIsbn;
@@ -17,7 +21,7 @@ class ShelveBookScreen extends StatefulWidget {
 
 class _ShelveBookScreenState extends State<ShelveBookScreen> {
   late final BookApiService _bookApiService;
-  late final GoogleSheetsService _sheetsService;
+  late final LocalDatabaseService _localDbService;
   
   Book? _scannedBook;
   BookGroup? _selectedGroup;
@@ -38,7 +42,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     super.didChangeDependencies();
     // Initialiser les services depuis le context
     _bookApiService = context.read<BookApiService>();
-    _sheetsService = context.read<GoogleSheetsService>();
+    _localDbService = context.read<LocalDatabaseService>();
     
     if (widget.scannedIsbn != null) {
       _handleScannedBook(widget.scannedIsbn!);
@@ -52,8 +56,8 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     });
 
     try {
-      // Vérifier si le livre existe déjà dans la base de données
-      final results = await _sheetsService.searchBooks('isbn', isbn);
+      // Vérifier si le livre existe déjà dans la base de données locale
+      final results = await _localDbService.searchBooks('isbn', isbn);
       final existingBook = results.isNotEmpty ? results.first : null;
       
       if (existingBook != null) {
@@ -67,9 +71,9 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
         });
         
         if (existingBook.groupId != null && existingBook.groupId!.isNotEmpty) {
-          // Livre avec groupe assigné - récupérer le groupe
+          // Livre avec groupe assigné → ALLER DIRECTEMENT À LA PAGE DE CONFIRMATION
           print('🔍 Recherche du groupe avec ID: ${existingBook.groupId}');
-          final groups = await _sheetsService.getAllBookGroups();
+          final groups = await _localDbService.getAllBookGroups();
           print('📚 Nombre de groupes chargés: ${groups.length}');
           
           try {
@@ -77,7 +81,10 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
             print('✅ Groupe trouvé: ${group.title}');
             setState(() {
               _selectedGroup = group;
+              _allGroups = groups; // Stocker tous les groupes pour permettre la modification
+              _isLoading = false; // Afficher directement la page de confirmation
             });
+            return; // Sortir pour afficher la confirmation immédiatement
           } catch (e) {
             print('❌ Groupe non trouvé pour ID: ${existingBook.groupId}');
             // Groupe non trouvé, charger tous les groupes pour sélection
@@ -120,7 +127,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
 
   Future<void> _loadGroupsAndSuggest() async {
     try {
-      final groups = await _sheetsService.getAllBookGroups();
+      final groups = await _localDbService.getAllBookGroups();
       setState(() {
         _allGroups = groups;
       });
@@ -150,6 +157,23 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     }
   }
 
+  Future<void> _editBookInfo() async {
+    if (_scannedBook == null) return;
+
+    final result = await Navigator.of(context).push<Book>(
+      MaterialPageRoute(
+        builder: (context) => EditBookScreen(book: _scannedBook!),
+      ),
+    );
+
+    // Si le livre a été mis à jour, actualiser l'affichage
+    if (result != null && mounted) {
+      setState(() {
+        _scannedBook = result;
+      });
+    }
+  }
+
   Future<void> _confirmShelving() async {
     if (_scannedBook == null) return;
 
@@ -159,27 +183,40 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
 
     try {
       String groupName = _selectedGroup?.title ?? 'Aucun groupe';
+      bool wasBookBorrowed = _scannedBook!.status == BookStatus.borrowed;
+      
+      // Si le livre était emprunté, marquer le dernier emprunt comme retourné
+      if (wasBookBorrowed) {
+        await _returnBorrowedBook();
+      }
       
       if (!_isBookInDatabase) {
         // Ajouter le livre à la base de données
         if (_selectedGroup != null) {
           _scannedBook!.assignToGroup(_selectedGroup!.id);
         }
-        await _sheetsService.addBook(_scannedBook!);
+        await _localDbService.addBook(_scannedBook!);
       } else {
         // Mettre à jour le groupe si changé
         if (_selectedGroup != null) {
           _scannedBook!.assignToGroup(_selectedGroup!.id);
-          await _sheetsService.updateBook(_scannedBook!);
+          await _localDbService.updateBook(_scannedBook!);
         }
       }
 
       // Afficher un message de confirmation
       if (mounted) {
+        String message;
+        if (wasBookBorrowed) {
+          message = '✅ Livre "${_scannedBook!.title}" retourné et rangé dans "$groupName"';
+        } else {
+          message = '✅ Livre "${_scannedBook!.title}" ${_isBookInDatabase ? 'mis à jour' : 'ajouté au groupe "$groupName"'}';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✅ Livre "${_scannedBook!.title}" ajouté au groupe "$groupName"',
+              message,
               style: const TextStyle(fontSize: 16),
             ),
             backgroundColor: Colors.green.shade600,
@@ -199,6 +236,52 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     }
   }
 
+  /// Marque le livre comme retourné et met à jour l'historique
+  Future<void> _returnBorrowedBook() async {
+    if (_scannedBook == null) return;
+
+    try {
+      // Mettre à jour l'historique local avec la date de retour
+      await DatabaseHelper().markLastBorrowAsReturned(_scannedBook!.isbn);
+      
+      // Marquer le livre comme retourné (met à jour le statut)
+      _scannedBook!.returnBook();
+      await _localDbService.updateBook(_scannedBook!);
+      
+      // Synchroniser avec Google Sheets en arrière-plan
+      _syncReturnToSheets();
+      
+      print('✅ Livre retourné: ${_scannedBook!.title}');
+    } catch (e) {
+      print('⚠️ Erreur lors du retour du livre: $e');
+      // Ne pas bloquer le processus de rangement en cas d'erreur
+    }
+  }
+
+  /// Synchronise le retour avec Google Sheets (en arrière-plan)
+  Future<void> _syncReturnToSheets() async {
+    if (_scannedBook == null) return;
+
+    try {
+      final sheetsService = context.read<GoogleSheetsService>();
+      
+      // Récupérer le dernier emprunt pour cet ISBN
+      final historyList = await DatabaseHelper().getBorrowHistoryForBook(_scannedBook!.isbn);
+      if (historyList.isNotEmpty) {
+        // Trier par date d'emprunt décroissante pour obtenir le dernier
+        historyList.sort((a, b) => b.borrowedAt.compareTo(a.borrowedAt));
+        final latestBorrow = historyList.first;
+        
+        // Mettre à jour dans Google Sheets
+        await sheetsService.updateBorrowHistory(latestBorrow);
+        print('✅ Retour synchronisé avec Google Sheets');
+      }
+    } catch (e) {
+      print('⚠️ Erreur de synchronisation du retour avec Google Sheets: $e');
+      // Ne pas bloquer l'utilisateur
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,6 +289,14 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
         title: const Text('Ranger un livre'),
         backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
+        actions: [
+          if (_scannedBook != null)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: _editBookInfo,
+              tooltip: 'Modifier les informations',
+            ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -257,7 +348,10 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildBookInfo(),
+          BookInfoCard(
+            book: _scannedBook!,
+            showGroupInfo: false,
+          ),
           const SizedBox(height: 24),
           Text(
             'Sélectionnez un groupe pour ce livre:',
@@ -328,7 +422,11 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _buildBookInfo(),
+          BookInfoCard(
+            book: _scannedBook!,
+            showGroupInfo: true,
+            group: _selectedGroup,
+          ),
           const SizedBox(height: 32),
           
           // Message principal
@@ -349,7 +447,12 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
           // Bouton "Modifier le groupe" (petit, discret)
           const SizedBox(height: 16),
           TextButton.icon(
-            onPressed: () {
+            onPressed: () async {
+              // Charger tous les groupes si pas déjà chargés
+              if (_allGroups.isEmpty) {
+                await _loadGroupsAndSuggest();
+              }
+              
               setState(() {
                 // Retour à la sélection de groupe
                 _selectedGroup = null;
@@ -369,14 +472,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
             width: double.infinity,
             height: 56,
             child: ElevatedButton.icon(
-              onPressed: _isBookInDatabase 
-                  ? () {
-                      // Retourner à l'accueil sans modification
-                      if (mounted) {
-                        Navigator.of(context).popUntil((route) => route.isFirst);
-                      }
-                    }
-                  : _confirmShelving,
+              onPressed: _confirmShelving,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isBookInDatabase 
                     ? Colors.blue.shade600 
@@ -394,109 +490,10 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
                 _isBookInDatabase ? Icons.arrow_forward : Icons.check_circle,
                 size: 28,
               ),
-              label: Text(_isBookInDatabase ? 'Continuer' : 'Confirmer'),
+              label: Text(_isBookInDatabase ? 'Ranger' : 'Enregistrer et ranger'),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBookInfo() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image de couverture
-            Container(
-              width: 80,
-              height: 120,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: Colors.grey.shade200,
-              ),
-              child: _scannedBook!.coverImageUrl != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        _scannedBook!.coverImageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.book,
-                            size: 40,
-                            color: Colors.grey.shade400,
-                          );
-                        },
-                      ),
-                    )
-                  : Icon(
-                      Icons.book,
-                      size: 40,
-                      color: Colors.grey.shade400,
-                    ),
-            ),
-            const SizedBox(width: 16),
-            // Informations du livre
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _scannedBook!.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Auteur: ${_scannedBook!.author}',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  if (_scannedBook!.publisher != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Éditeur: ${_scannedBook!.publisher}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                  if (_scannedBook!.subjects.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: _scannedBook!.subjects.take(3).map((subject) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            subject,
-                            style: TextStyle(
-                              color: Colors.blue.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -634,21 +631,22 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   }
 
   Widget _buildGroupLogo(BookGroup group, {double size = 40}) {
-    if (group.logoPath != null) {
+    // Afficher le logo SVG si disponible
+    if (group.svgData != null && group.svgData!.isNotEmpty) {
       return Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(size / 8),
+          color: Colors.white,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(size / 8),
-          child: Image.asset(
-            group.logoPath!,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildDefaultLogo(group, size);
-            },
+          child: SvgLogoWidget(
+            svgData: group.svgData!,
+            colorHex: group.groupColor,
+            width: size,
+            height: size,
           ),
         ),
       );
@@ -657,15 +655,26 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   }
 
   Widget _buildDefaultLogo(BookGroup group, double size) {
+    // Utiliser la couleur du groupe si disponible, sinon un gradient par défaut
+    final hasCustomColor = group.groupColor != null && group.groupColor!.isNotEmpty;
+    final customColor = hasCustomColor
+        ? Color(int.parse(group.groupColor!.replaceFirst('#', '0xFF')))
+        : null;
+    
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Colors.blue.shade400,
-            Colors.purple.shade400,
-          ],
+          colors: customColor != null
+              ? [
+                  customColor.withOpacity(0.7),
+                  customColor,
+                ]
+              : [
+                  Colors.blue.shade400,
+                  Colors.purple.shade400,
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

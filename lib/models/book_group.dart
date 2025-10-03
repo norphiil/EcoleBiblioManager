@@ -5,7 +5,9 @@ class BookGroup extends Synchronizable {
   String id;
   String title;
   String key; // Clé unique sans caractères spéciaux, sans espaces, en majuscules
-  String? logoPath; // Chemin vers l'image/logo du groupe
+  String? logoPath; // Chemin vers l'image/logo du groupe (deprecated, utiliser svgData)
+  String? svgData; // Données SVG encodées en base64
+  String? groupColor; // Couleur du groupe en format hexadécimal (ex: "#FF5733")
   List<String> keywords; // Mots-clés pour l'association automatique
   String? description;
   
@@ -19,6 +21,8 @@ class BookGroup extends Synchronizable {
     required this.title,
     required this.key,
     this.logoPath,
+    this.svgData,
+    this.groupColor,
     this.keywords = const [],
     this.description,
     this.lastModified,
@@ -37,6 +41,8 @@ class BookGroup extends Synchronizable {
     required String id,
     required String title,
     String? logoPath,
+    String? svgData,
+    String? groupColor,
     List<String> keywords = const [],
     String? description,
     DateTime? lastModified,
@@ -46,6 +52,8 @@ class BookGroup extends Synchronizable {
       title: title,
       key: generateKey(title),
       logoPath: logoPath,
+      svgData: svgData,
+      groupColor: groupColor,
       keywords: keywords,
       description: description,
       lastModified: lastModified,
@@ -59,12 +67,14 @@ class BookGroup extends Synchronizable {
       title: row.length > 1 ? row[1]?.toString() ?? '' : '',
       key: row.length > 2 ? row[2]?.toString() ?? '' : '',
       logoPath: row.length > 3 && row[3]?.toString().isNotEmpty == true ? row[3].toString() : null,
-      keywords: row.length > 4 && row[4]?.toString().isNotEmpty == true 
-          ? row[4].toString().split(';').map((e) => e.trim()).toList() 
+      svgData: row.length > 4 && row[4]?.toString().isNotEmpty == true ? row[4].toString() : null,
+      groupColor: row.length > 5 && row[5]?.toString().isNotEmpty == true ? row[5].toString() : null,
+      keywords: row.length > 6 && row[6]?.toString().isNotEmpty == true 
+          ? row[6].toString().split(';').map((e) => e.trim()).toList() 
           : [],
-      description: row.length > 5 && row[5]?.toString().isNotEmpty == true ? row[5].toString() : null,
-      lastModified: row.length > 6 && row[6]?.toString().isNotEmpty == true 
-          ? DateTime.tryParse(row[6].toString()) 
+      description: row.length > 7 && row[7]?.toString().isNotEmpty == true ? row[7].toString() : null,
+      lastModified: row.length > 8 && row[8]?.toString().isNotEmpty == true 
+          ? DateTime.tryParse(row[8].toString()) 
           : null,
     );
   }
@@ -97,6 +107,8 @@ class BookGroup extends Synchronizable {
       'title': title,
       'key': key,
       'logoPath': logoPath,
+      'svgData': svgData,
+      'groupColor': groupColor,
       'keywords': keywords,
       'description': description,
       'lastModified': lastModified?.toIso8601String(),
@@ -110,6 +122,8 @@ class BookGroup extends Synchronizable {
       title,
       key,
       logoPath ?? '',
+      svgData ?? '',
+      groupColor ?? '',
       keywords.join(';'),
       description ?? '',
       lastModified?.toIso8601String() ?? DateTime.now().toIso8601String(),
@@ -151,6 +165,8 @@ class BookGroup extends Synchronizable {
     String? title,
     String? key,
     String? logoPath,
+    String? svgData,
+    String? groupColor,
     List<String>? keywords,
     String? description,
   }) {
@@ -159,6 +175,8 @@ class BookGroup extends Synchronizable {
       title: title ?? this.title,
       key: key ?? this.key,
       logoPath: logoPath ?? this.logoPath,
+      svgData: svgData ?? this.svgData,
+      groupColor: groupColor ?? this.groupColor,
       keywords: keywords ?? this.keywords,
       description: description ?? this.description,
       lastModified: DateTime.now(),

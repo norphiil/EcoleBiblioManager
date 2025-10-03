@@ -54,143 +54,273 @@ class _InitializationScreenState extends State<InitializationScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      body: Consumer<InitializationService>(
-        builder: (context, initService, child) {
-          return SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppConstants.paddingLarge),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: MediaQuery.of(context).size.height - 
-                            (AppConstants.paddingLarge * 2) - 
-                            MediaQuery.of(context).padding.top - 
-                            MediaQuery.of(context).padding.bottom,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                  // Logo et titre animés
-                  FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF2196F3), // Bleu principal
+              const Color(0xFF1976D2), // Bleu plus foncé
+              const Color(0xFF1565C0), // Bleu encore plus foncé
+            ],
+          ),
+        ),
+        child: Consumer<InitializationService>(
+          builder: (context, initService, child) {
+            return Stack(
+              children: [
+                // Décoration de fond avec cercles flottants
+                _buildBackgroundDecoration(),
+                
+                // Contenu principal centré
+                Center(
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 50,
+                        vertical: AppConstants.paddingLarge,
+                      ),
                       child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(60),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.library_books,
-                              size: 60,
-                              color: Theme.of(context).colorScheme.primary,
+                          // Logo et titre animés avec nouveau design
+                          FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: ScaleTransition(
+                              scale: _scaleAnimation,
+                              child: Column(
+                                children: [
+                                  // Logo moderne avec effet glassmorphism
+                                  Container(
+                                    width: 140,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(35),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.3),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.1),
+                                          blurRadius: 30,
+                                          spreadRadius: 5,
+                                          offset: const Offset(0, 15),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        width: 100,
+                                        height: 100,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(25),
+                                        ),
+                                        child: Icon(
+                                          Icons.library_books_rounded,
+                                          size: 60,
+                                          color: const Color(0xFF2196F3),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 30),
+                                  
+                                  // Titre avec style moderne
+                                  Text(
+                                    AppConstants.appName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 36,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.5,
+                                      height: 1.2,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  
+                                  // Sous-titre élégant
+                                  Text(
+                                    'Gestionnaire de bibliothèque',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w400,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
+                          
+                          const SizedBox(height: 50),
+                          
+                          // Indicateur de progression moderne
+                          _buildProgressIndicator(initService),
+                          
+                          const SizedBox(height: 30),
+                          
+                          // Statut et étape courante
+                          _buildStatusInfo(initService),
+                          
                           const SizedBox(height: AppConstants.paddingLarge),
-                          Text(
-                            AppConstants.appName,
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: AppConstants.paddingSmall),
-                          Text(
-                            'Gestionnaire de bibliothèque',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.white.withOpacity(0.8),
-                            ),
-                          ),
+                          
+                          // Bouton d'action (en cas d'erreur)
+                          if (initService.hasError) _buildRetryButton(initService),
                         ],
                       ),
                     ),
                   ),
-                  
-                  const SizedBox(height: AppConstants.paddingLarge * 2),
-                  
-                  // Indicateur de progression
-                  _buildProgressIndicator(initService),
-                  
-                  const SizedBox(height: AppConstants.paddingLarge),
-                  
-                  // Statut et étape courante
-                  _buildStatusInfo(initService),
-                  
-                  const SizedBox(height: AppConstants.paddingLarge),
-                  
-                  // Bouton d'action (en cas d'erreur)
-                  if (initService.hasError) _buildRetryButton(initService),
-                ],
                 ),
-              ),
-            ),
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
+    );
+  }
+
+  /// Décoration de fond avec cercles flottants
+  Widget _buildBackgroundDecoration() {
+    return Stack(
+      children: [
+        // Cercle en haut à gauche
+        Positioned(
+          top: -100,
+          left: -100,
+          child: Container(
+            width: 300,
+            height: 300,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+          ),
+        ),
+        // Cercle en bas à droite
+        Positioned(
+          bottom: -150,
+          right: -150,
+          child: Container(
+            width: 400,
+            height: 400,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+          ),
+        ),
+        // Petit cercle en haut à droite
+        Positioned(
+          top: 100,
+          right: 50,
+          child: Container(
+            width: 150,
+            height: 150,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.03),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildProgressIndicator(InitializationService initService) {
     return Column(
       children: [
-        // Barre de progression circulaire
-        SizedBox(
-          width: 80,
-          height: 80,
+        // Cercle de progression moderne avec effet glassmorphism
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.15),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
           child: Stack(
+            alignment: Alignment.center,
             children: [
-              CircularProgressIndicator(
-                value: initService.hasError ? null : initService.progress,
-                strokeWidth: 6,
-                backgroundColor: Colors.white.withOpacity(0.3),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  initService.hasError ? Colors.red : Colors.white,
+              // Indicateur de progression circulaire
+              SizedBox(
+                width: 100,
+                height: 100,
+                child: CircularProgressIndicator(
+                  value: initService.hasError ? null : initService.progress,
+                  strokeWidth: 8,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    initService.hasError 
+                        ? Colors.red.shade300 
+                        : Colors.white,
+                  ),
+                  strokeCap: StrokeCap.round,
                 ),
               ),
-              Center(
-                child: Text(
-                  initService.hasError 
-                      ? '!' 
-                      : '${(initService.progress * 100).toInt()}%',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              
+              // Pourcentage au centre avec icône
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (initService.hasError)
+                    Icon(
+                      Icons.error_outline,
+                      color: Colors.red.shade300,
+                      size: 32,
+                    )
+                  else
+                    Text(
+                      '${(initService.progress * 100).toInt()}%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
         ),
         
-        const SizedBox(height: AppConstants.paddingMedium),
+        const SizedBox(height: 25),
         
-        // Barre de progression linéaire
+        // Barre de progression linéaire élégante
         Container(
-          width: double.infinity,
-          height: 4,
+          constraints: const BoxConstraints(maxWidth: 400),
+          height: 6,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(2),
+            color: Colors.white.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(3),
           ),
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: initService.hasError ? 1.0 : initService.progress,
-            child: Container(
-              decoration: BoxDecoration(
-                color: initService.hasError ? Colors.red : Colors.white,
-                borderRadius: BorderRadius.circular(2),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: initService.hasError ? 1.0 : initService.progress,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                initService.hasError 
+                    ? Colors.red.shade300 
+                    : Colors.white,
               ),
+              minHeight: 6,
             ),
           ),
         ),
@@ -199,116 +329,227 @@ class _InitializationScreenState extends State<InitializationScreen>
   }
 
   Widget _buildStatusInfo(InitializationService initService) {
-    return Column(
-      children: [
-        // Étape courante
-        Text(
-          initService.currentStep.isNotEmpty 
-              ? initService.currentStep 
-              : 'Préparation...',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 500),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.2),
+          width: 1.5,
         ),
-        
-        // Message d'erreur si nécessaire
-        if (initService.hasError && initService.errorMessage != null) ...[
-          const SizedBox(height: AppConstants.paddingMedium),
-          Container(
-            padding: const EdgeInsets.all(AppConstants.paddingMedium),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red.withOpacity(0.5)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red),
-                    const SizedBox(width: AppConstants.paddingSmall),
-                    Expanded(
-                      child: Text(
-                        'Erreur d\'initialisation',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.red,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppConstants.paddingSmall),
-                Text(
-                  initService.errorMessage!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        
-        // Message de succès
-        if (initService.isCompleted) ...[
-          const SizedBox(height: AppConstants.paddingMedium),
+      ),
+      child: Column(
+        children: [
+          // Icône et titre de l'étape
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.check_circle, color: Colors.green),
-              const SizedBox(width: AppConstants.paddingSmall),
-              Text(
-                'Initialisation terminée !',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.green,
-                  fontWeight: FontWeight.bold,
+              if (!initService.hasError && !initService.isCompleted) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.sync,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              if (initService.isCompleted) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle,
+                    color: Colors.greenAccent,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Flexible(
+                child: Text(
+                  initService.isCompleted 
+                      ? 'Initialisation terminée !'
+                      : (initService.currentStep.isNotEmpty 
+                          ? initService.currentStep 
+                          : 'Préparation...'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
           ),
+          
+          // Message d'erreur si nécessaire
+          if (initService.hasError && initService.errorMessage != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.red.shade300.withValues(alpha: 0.4),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.red.shade200,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Erreur d\'initialisation',
+                          style: TextStyle(
+                            color: Colors.red.shade100,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          initService.errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red.shade100,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
   Widget _buildRetryButton(InitializationService initService) {
-    return Column(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton.icon(
-              onPressed: () => initService.retry(),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Theme.of(context).colorScheme.primary,
+        // Bouton Réessayer avec effet glassmorphism
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.25),
+                Colors.white.withValues(alpha: 0.15),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => initService.retry(),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.paddingLarge,
-                  vertical: AppConstants.paddingMedium,
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Réessayer',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: AppConstants.paddingMedium),
-            OutlinedButton.icon(
-              onPressed: () => _showConfigurationHelp(context),
-              icon: const Icon(Icons.help_outline),
-              label: const Text('Aide'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white),
+          ),
+        ),
+        
+        const SizedBox(width: 16),
+        
+        // Bouton Aide
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.4),
+              width: 1.5,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _showConfigurationHelp(context),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.paddingLarge,
-                  vertical: AppConstants.paddingMedium,
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(
+                      Icons.help_outline_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Aide',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ],
     );

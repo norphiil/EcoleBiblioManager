@@ -56,9 +56,20 @@ dependencies:
   
   # Interface utilisateur
   flutter_svg: ^2.0.10+1
+  flutter_colorpicker: ^1.1.0
+  
+  # Sélection de fichiers
+  file_picker: ^8.1.6
   
   # Utilitaires de chemins
   path: ^1.9.0
+  
+  # Base de données locale SQLite
+  sqflite: ^2.4.1
+  sqflite_common_ffi: ^2.3.4
+  
+  # Logger pour le débogage
+  logger: ^2.5.0
 
 dev_dependencies:
   flutter_test:
