@@ -1,0 +1,1 @@
+export 'python_barcode_scanner.dart';
