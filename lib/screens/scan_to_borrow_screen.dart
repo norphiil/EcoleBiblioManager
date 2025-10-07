@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/app_constants.dart';
+import '../core/utils/dynamic_color_scheme.dart';
 import '../widgets/scanner/python_barcode_scanner.dart';
 import '../widgets/books/book_info_card.dart';
 import '../models/models.dart';
@@ -24,6 +26,7 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
   ClassRoom? _selectedClass;
   List<ClassRoom> _allClasses = [];
   bool _isProcessing = false;
+  DynamicColorScheme? _currentColors; // Stocke les couleurs actuelles
   
   @override
   void didChangeDependencies() {
@@ -47,13 +50,30 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Prendre un livre'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+    // Créer le schéma de couleurs dynamique basé sur le groupe du livre
+    final dynamicColors = _bookGroup != null
+        ? DynamicColorScheme.fromGroupColor(_bookGroup!.groupColor)
+        : DynamicColorScheme.fromColor(Theme.of(context).colorScheme.primary);
+    
+    // Stocker pour utilisation dans les méthodes
+    _currentColors = dynamicColors;
+
+    return DynamicThemeProvider(
+      colorScheme: dynamicColors,
+      child: Builder(
+        builder: (context) {
+          final colors = context.dynamicColors;
+          
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Prendre un livre'),
+              backgroundColor: colors.primaryColor,
+              foregroundColor: colors.onPrimaryColor,
+            ),
+            body: _scannedBook == null ? _buildScanner() : _buildBorrowForm(colors),
+          );
+        },
       ),
-      body: _scannedBook == null ? _buildScanner() : _buildBorrowForm(),
     );
   }
 
@@ -64,7 +84,7 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
     );
   }
 
-  Widget _buildBorrowForm() {
+  Widget _buildBorrowForm(DynamicColorScheme colors) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppConstants.paddingMedium),
       child: Column(
@@ -205,9 +225,11 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
         
         // Afficher un dialog avec message clair
         if (mounted) {
+          // Capturer le contexte de l'écran avant d'ouvrir le dialog
+          final screenContext = context;
           showDialog(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (dialogContext) => AlertDialog(
               title: const Row(
                 children: [
                   Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 32),
@@ -227,13 +249,13 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: _currentColors?.backgroundColor ?? Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
+                      border: Border.all(color: _currentColors?.borderColor ?? Colors.blue.shade200),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.blue),
+                        Icon(Icons.info_outline, color: _currentColors?.primaryColor ?? Colors.blue),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -249,14 +271,14 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.of(context).pop();
-                    // Retourner à l'accueil pour aller vers "Ranger un livre"
-                    Navigator.of(context).pop();
+                    Navigator.of(dialogContext).pop(); // Fermer le dialog
+                    // Naviguer vers la page de rangement avec l'ISBN scanné en utilisant le contexte de l'écran
+                    screenContext.push('${AppRoutes.shelveBook}?isbn=$code');
                   },
                   child: const Text('Aller ranger le livre'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Scanner un autre'),
                 ),
               ],
@@ -427,7 +449,7 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.book, color: Colors.blue),
+                    Icon(Icons.book, color: _currentColors?.primaryColor ?? Colors.blue),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
@@ -502,14 +524,14 @@ class _ScanToBorrowScreenState extends State<ScanToBorrowScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: _currentColors?.backgroundColor ?? Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
+                  border: Border.all(color: _currentColors?.borderColor ?? Colors.blue.shade200),
                 ),
-                child: const Row(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.lightbulb_outline, color: Colors.blue),
+                    Icon(Icons.lightbulb_outline, color: _currentColors?.primaryColor ?? Colors.blue),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(

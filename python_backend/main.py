@@ -122,9 +122,6 @@ class BarcodeDetector:
                 if barcodes:
                     logger.info(f"✅ Codes-barres détectés avec la méthode {i} - {len(barcodes)} codes trouvés")
                     break
-            else:
-                logger.info("❌ Aucun code-barres détecté après toutes les tentatives")
-                barcodes = []
             
             for i, barcode in enumerate(barcodes):
                 # Décodage des données

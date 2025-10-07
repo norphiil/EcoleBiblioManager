@@ -24,10 +24,11 @@ class AppConstants {
   static const double paddingLarge = 24.0;
   static const double paddingXLarge = 32.0;
   
-  // Rayons des bordures
-  static const double radiusSmall = 8.0;
-  static const double radiusMedium = 12.0;
-  static const double radiusLarge = 16.0;
+  // Rayons des bordures (style moderne avec coins plus arrondis)
+  static const double radiusSmall = 12.0;
+  static const double radiusMedium = 16.0;
+  static const double radiusLarge = 20.0;
+  static const double radiusXLarge = 24.0;
   
   // Tailles d'icônes
   static const double iconSizeSmall = 20.0;

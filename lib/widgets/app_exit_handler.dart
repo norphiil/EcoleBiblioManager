@@ -51,16 +51,16 @@ class _AppExitHandlerState extends State<AppExitHandler> {
     // Utiliser PopScope (Flutter 3.12+) pour intercepter le bouton retour/fermeture
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
-        if (!didPop) {
-          final shouldExit = await _onWillPop();
-          if (shouldExit && context.mounted) {
-            // Forcer la fermeture de l'application
-            if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-              exit(0);
-            } else {
-              SystemNavigator.pop();
-            }
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        
+        final shouldExit = await _onWillPop();
+        if (shouldExit) {
+          // Fermer l'application après la sync
+          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+            exit(0);
+          } else {
+            SystemNavigator.pop();
           }
         }
       },

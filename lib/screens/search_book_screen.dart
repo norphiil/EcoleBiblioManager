@@ -159,11 +159,13 @@ class _SearchBookScreenState extends State<SearchBookScreen> {
                     ? IconButton(
                         icon: Icon(
                           Icons.clear,
-                          color: Colors.grey.shade600,
+                          color: Colors.grey.shade700,
                         ),
+                        tooltip: 'Effacer',
                         onPressed: () {
                           _searchController.clear();
                           _searchBooks('');
+                          setState(() {}); // Forcer le rebuild
                         },
                       )
                     : null,

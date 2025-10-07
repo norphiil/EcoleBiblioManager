@@ -5,6 +5,7 @@ import '../services/services.dart';
 import '../services/database/database_helper.dart';
 import '../widgets/books/book_info_card.dart';
 import '../widgets/svg_logo_widget.dart';
+import '../core/utils/dynamic_color_scheme.dart';
 import 'edit_book_screen.dart';
 
 class ShelveBookScreen extends StatefulWidget {
@@ -284,27 +285,41 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ranger un livre'),
-        backgroundColor: Colors.blue.shade600,
-        foregroundColor: Colors.white,
-        actions: [
-          if (_scannedBook != null)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editBookInfo,
-              tooltip: 'Modifier les informations',
+    // Créer le schéma de couleurs dynamique basé sur le groupe sélectionné
+    final dynamicColors = _selectedGroup != null
+        ? DynamicColorScheme.fromGroupColor(_selectedGroup!.groupColor)
+        : DynamicColorScheme.fromColor(Theme.of(context).colorScheme.primary);
+
+    return DynamicThemeProvider(
+      colorScheme: dynamicColors,
+      child: Builder(
+        builder: (context) {
+          final colors = context.dynamicColors;
+          
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Ranger un livre'),
+              backgroundColor: colors.primaryColor,
+              foregroundColor: colors.onPrimaryColor,
+              actions: [
+                if (_scannedBook != null)
+                  IconButton(
+                    icon: const Icon(Icons.edit),
+                    onPressed: _editBookInfo,
+                    tooltip: 'Modifier les informations',
+                  ),
+              ],
             ),
-        ],
+            body: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildContent(colors),
+          );
+        },
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _buildContent(),
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildContent(DynamicColorScheme colors) {
     if (_errorMessage != null) {
       return Center(
         child: Column(
@@ -335,14 +350,14 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
 
     // Si un groupe est sélectionné, afficher la confirmation
     if (_selectedGroup != null) {
-      return _buildShelvingConfirmation();
+      return _buildShelvingConfirmation(colors);
     }
 
     // Sinon, afficher la sélection de groupe
-    return _buildGroupSelection();
+    return _buildGroupSelection(colors);
   }
 
-  Widget _buildGroupSelection() {
+  Widget _buildGroupSelection(DynamicColorScheme colors) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -369,7 +384,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            ..._suggestedGroups.map((group) => _buildGroupTile(group, true)),
+            ..._suggestedGroups.map((group) => _buildGroupTile(group, true, colors)),
             const SizedBox(height: 20),
           ],
           Text(
@@ -381,7 +396,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
           const SizedBox(height: 12),
           ..._allGroups
               .where((group) => !_suggestedGroups.contains(group))
-              .map((group) => _buildGroupTile(group, false)),
+              .map((group) => _buildGroupTile(group, false, colors)),
           const SizedBox(height: 24),
           // Bouton de validation
           if (_selectedGroup != null)
@@ -416,7 +431,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     );
   }
 
-  Widget _buildShelvingConfirmation() {
+  Widget _buildShelvingConfirmation(DynamicColorScheme colors) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -475,9 +490,9 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
               onPressed: _confirmShelving,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isBookInDatabase 
-                    ? Colors.blue.shade600 
+                    ? colors.primaryColor 
                     : Colors.green.shade600,
-                foregroundColor: Colors.white,
+                foregroundColor: colors.onPrimaryColor,
                 textStyle: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -498,8 +513,10 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     );
   }
 
-  Widget _buildGroupTile(BookGroup group, bool isSuggested) {
+  Widget _buildGroupTile(BookGroup group, bool isSuggested, DynamicColorScheme colors) {
     final isSelected = _selectedGroup?.id == group.id;
+    // Créer les couleurs pour ce groupe spécifique
+    final groupColors = DynamicColorScheme.fromGroupColor(group.groupColor);
     
     return Card(
       elevation: isSelected ? 4 : 1,
@@ -508,7 +525,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: isSelected 
-              ? Colors.blue.shade600 
+              ? groupColors.primaryColor 
               : isSuggested 
                   ? Colors.green.shade300
                   : Colors.transparent,
@@ -522,7 +539,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
           group.title,
           style: TextStyle(
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.blue.shade700 : null,
+            color: isSelected ? groupColors.darkerColor : null,
           ),
         ),
         subtitle: group.keywords.isNotEmpty
@@ -535,7 +552,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
               )
             : null,
         trailing: isSelected
-            ? Icon(Icons.check_circle, color: Colors.blue.shade600)
+            ? Icon(Icons.check_circle, color: groupColors.primaryColor)
             : isSuggested
                 ? Icon(Icons.star, color: Colors.amber.shade600, size: 20)
                 : null,
@@ -544,6 +561,9 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   }
 
   Widget _buildGroupDisplay(BookGroup group) {
+    // Créer les couleurs pour ce groupe spécifique
+    final groupColors = DynamicColorScheme.fromGroupColor(group.groupColor);
+    
     return Card(
       elevation: 6,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -555,8 +575,8 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.blue.shade50,
-              Colors.purple.shade50,
+              groupColors.backgroundColor,
+              groupColors.backgroundColor.darken(0.03),
             ],
           ),
           borderRadius: BorderRadius.circular(20),
@@ -573,7 +593,7 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
               group.title,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.blue.shade800,
+                color: groupColors.textColor,
                 fontSize: 28,
               ),
               textAlign: TextAlign.center,
@@ -605,17 +625,17 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade100,
+                      color: groupColors.backgroundColor,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.blue.shade300,
+                        color: groupColors.borderColor,
                         width: 1,
                       ),
                     ),
                     child: Text(
                       keyword,
                       style: TextStyle(
-                        color: Colors.blue.shade800,
+                        color: groupColors.textColor,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -672,8 +692,8 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
                   customColor,
                 ]
               : [
-                  Colors.blue.shade400,
-                  Colors.purple.shade400,
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.darken(0.1),
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

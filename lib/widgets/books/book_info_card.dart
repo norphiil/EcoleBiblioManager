@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/models.dart';
+import '../../core/utils/dynamic_color_scheme.dart';
 
 /// Widget réutilisable pour afficher les informations d'un livre
 class BookInfoCard extends StatelessWidget {
@@ -132,6 +133,42 @@ class BookInfoCard extends StatelessWidget {
                           'Pages',
                           '${book.pageCount} pages',
                         ),
+
+                      if (book.description != null && book.description!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Description',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          constraints: const BoxConstraints(
+                            maxHeight: 120, // Environ 6 lignes (20px par ligne)
+                          ),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.grey.shade300,
+                              width: 1,
+                            ),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Text(
+                              book.description!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                height: 1.5,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]
                     ],
                   ),
                 ),
@@ -184,41 +221,50 @@ class BookInfoCard extends StatelessWidget {
               const SizedBox(height: 16),
               const Divider(height: 1),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.blue.shade200,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.folder,
-                      color: Colors.blue.shade700,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Rangé dans: ',
-                      style: TextStyle(
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w500,
+              Builder(
+                builder: (context) {
+                  // Générer les couleurs dynamiques à partir de la couleur du groupe
+                  final groupColors = group!.groupColor != null
+                      ? DynamicColorScheme.fromGroupColor(group!.groupColor!)
+                      : DynamicColorScheme.fromColor(Colors.blue);
+                  
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: groupColors.backgroundColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: groupColors.borderColor,
                       ),
                     ),
-                    Expanded(
-                      child: Text(
-                        group!.title,
-                        style: TextStyle(
-                          color: Colors.blue.shade900,
-                          fontWeight: FontWeight.bold,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.folder,
+                          color: groupColors.textColor,
+                          size: 20,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Rangé dans: ',
+                          style: TextStyle(
+                            color: groupColors.textColor,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            group!.title,
+                            style: TextStyle(
+                              color: groupColors.darkerColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
             

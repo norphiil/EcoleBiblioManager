@@ -123,15 +123,15 @@ function initializeAllSheets() {
   
   // Initialise la feuille des livres (utilise isbn comme identifiant unique)
   results.books = initializeSheet(spreadsheet, SHEETS.BOOKS, [
-    'isbn', 'title', 'author', 'publisher', 'publishYear', 
-    'publishPlace', 'subjects', 'pageCount', 'coverImageUrl', 
+    'isbn', 'title', 'author', 'description', 'publisher', 'publishYear', 
+    'publishPlace', 'pageCount', 'subjects', 'coverImageUrl', 
     'groupId', 'status', 'borrowedBy', 'borrowerClassName', 'borrowedDate', 
     'createdAt', 'updatedAt'
   ]);
   
   // Initialise la feuille des groupes
   results.groups = initializeSheet(spreadsheet, SHEETS.GROUPS, [
-    'id', 'title', 'key', 'logoPath', 'svgData', 'groupColor', 'keywords', 'description', 
+    'id', 'title', 'key', 'svgData', 'groupColor', 'keywords', 'description', 
     'createdAt', 'updatedAt'
   ]);
   

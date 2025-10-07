@@ -5,7 +5,6 @@ import '../core/utils/logger.dart';
 
 /// Service pour récupérer les informations des livres via l'API OpenLibrary (gratuite)
 class BookApiService {
-  static const String _baseUrl = 'https://openlibrary.org';
   static const Duration _timeout = Duration(seconds: 10);
   
   final Logger _logger;
@@ -71,28 +70,58 @@ class BookApiService {
   }
 
   /// Recherche un livre sur l'API Books d'OpenLibrary
+  Future<Book?> _fetchFromOpenLibrary(String isbn) async {
+    final url = 'https://openlibrary.org/api/books?bibkeys=ISBN:$isbn&jscmd=data&format=json';
+
+    final response = await http.get(Uri.parse(url)).timeout(_timeout);
+    
+    if (response.statusCode != 200) {
+      return null;
+    }
+    
+    final data = json.decode(response.body);
+    _logger.info("data: $data");
+    if (data.isEmpty) {
+      return null;
+    }
+    
+    final bookData = data['ISBN:$isbn'];
+    if (bookData == null) {
+      return null;
+    }
+
+    return Book.fromOpenLibraryResponse(bookData, isbn);
+  }
+
+  /// Recherche un livre sur l'API Books de google api
+  Future<Book?> _fetchFromGoogleBooks(String isbn) async {
+    final url = "https://www.googleapis.com/books/v1/volumes?q=isbn:$isbn";
+
+    final response = await http.get(Uri.parse(url)).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      return null;
+    }
+
+    final data = json.decode(response.body);
+    if (data['totalItems'] == 0) {
+      return null;
+    }
+
+    final bookData = data['items'][0]['volumeInfo'];
+
+    return Book.fromGoogleBooksResponse(bookData, isbn);
+  }
+
   Future<Book?> _fetchFromBooksApi(String isbn) async {
     try {
-      final url = '$_baseUrl/api/books?bibkeys=ISBN:$isbn&jscmd=data&format=json';
-      
-      final response = await http.get(Uri.parse(url)).timeout(_timeout);
-      
-      if (response.statusCode != 200) {
-        return null;
-      }
-      
-      final data = json.decode(response.body);
-      _logger.info("data: $data");
-      if (data.isEmpty) {
-        return null;
-      }
-      
-      final bookData = data['ISBN:$isbn'];
-      if (bookData == null) {
-        return null;
-      }
-      
-      return Book.fromApiResponse(data, isbn);
+      Book? book1 = await _fetchFromGoogleBooks(isbn);
+      Book? book2 = await _fetchFromOpenLibrary(isbn);
+      Book book = Book.concat(book1, book2);
+      _logger.info("book1: $book1");
+      _logger.info("book2: $book2");
+      _logger.info("book: ${book.toJson()}");
+      return book;
     } catch (e) {
       _logger.warning('Erreur Books API pour ISBN $isbn', e);
       return null;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/constants/app_constants.dart';
+import '../core/utils/dynamic_color_scheme.dart';
 import '../widgets/scanner/python_barcode_scanner.dart';
 import '../widgets/svg_logo_widget.dart';
 import '../services/services.dart';
@@ -18,12 +19,14 @@ class BookInfoScreen extends StatefulWidget {
 class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final BookApiService _bookApiService = BookApiService();
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   
   Book? _localBook;
   Book? _apiBook;
   bool _isLoading = false;
   String? _errorMessage;
   int _scannerKey = 0; // Clé pour forcer la recréation du scanner
+  DynamicColorScheme? _currentColors;
 
   @override
   void initState() {
@@ -44,7 +47,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final scaffold = Scaffold(
       key: AppKeys.bookInfoScreenKey,
       appBar: AppBar(
         title: const Text('Informations livre'),
@@ -73,6 +76,16 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
           ? _buildScanner() 
           : _buildBookInfoTabs(),
     );
+    
+    // Wrap with dynamic theme if we have colors
+    if (_currentColors != null) {
+      return DynamicThemeProvider(
+        colorScheme: _currentColors!,
+        child: scaffold,
+      );
+    }
+    
+    return scaffold;
   }
 
   Widget _buildScanner() {
@@ -257,6 +270,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,12 +293,12 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                       ),
                       decoration: BoxDecoration(
                         color: isLocal 
-                            ? Colors.blue.shade50
+                            ? (_currentColors?.backgroundColor ?? Colors.blue.shade50)
                             : Colors.purple.shade50,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: isLocal 
-                              ? Colors.blue.shade200
+                              ? (_currentColors?.borderColor ?? Colors.blue.shade200)
                               : Colors.purple.shade200,
                         ),
                       ),
@@ -295,7 +309,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                             isLocal ? Icons.storage : Icons.cloud,
                             size: 14,
                             color: isLocal 
-                                ? Colors.blue.shade700
+                                ? (_currentColors?.textColor ?? Colors.blue.shade700)
                                 : Colors.purple.shade700,
                           ),
                           const SizedBox(width: 6),
@@ -305,7 +319,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: isLocal 
-                                  ? Colors.blue.shade700
+                                  ? (_currentColors?.textColor ?? Colors.blue.shade700)
                                   : Colors.purple.shade700,
                             ),
                           ),
@@ -403,6 +417,44 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
               ),
             ],
           ),
+          
+          // Description du livre si disponible
+          if (book.description != null && book.description!.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.description_outlined,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Description',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  book.description!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -485,19 +537,29 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
         }
 
         final group = snapshot.data!;
+        
+        // Générer les couleurs dynamiques à partir de la couleur du groupe
+        final groupColors = group.groupColor != null
+            ? DynamicColorScheme.fromGroupColor(group.groupColor!)
+            : DynamicColorScheme.fromColor(Colors.blue);
+        
         return Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Theme.of(context).colorScheme.primaryContainer,
-                Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                groupColors.backgroundColor,
+                groupColors.backgroundColor.withValues(alpha: 0.5),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: groupColors.borderColor,
+              width: 1.5,
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.08),
@@ -556,7 +618,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                        color: groupColors.textColor.withValues(alpha: 0.7),
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -566,7 +628,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        color: groupColors.darkerColor,
                         height: 1.2,
                       ),
                     ),
@@ -576,7 +638,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
                         group.description!,
                         style: TextStyle(
                           fontSize: 13,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                          color: groupColors.textColor.withValues(alpha: 0.8),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1127,6 +1189,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
       _errorMessage = null;
       _localBook = null;
       _apiBook = null;
+      _currentColors = null;
     });
 
     try {
@@ -1136,9 +1199,26 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
         _bookApiService.getBookByIsbn(code),
       ]);
 
+      final localBook = futures[0];
+      final apiBook = futures[1];
+      
+      // Load group color if book has a group
+      DynamicColorScheme? colors;
+      if (localBook != null && localBook.groupId != null) {
+        try {
+          final group = await _dbHelper.getGroup(localBook.groupId!);
+          if (group?.groupColor != null) {
+            colors = DynamicColorScheme.fromGroupColor(group!.groupColor!);
+          }
+        } catch (e) {
+          print('Error loading group color: $e');
+        }
+      }
+
       setState(() {
-        _localBook = futures[0];
-        _apiBook = futures[1];
+        _localBook = localBook;
+        _apiBook = apiBook;
+        _currentColors = colors;
         _isLoading = false;
       });
 
@@ -1171,6 +1251,7 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
       _localBook = null;
       _apiBook = null;
       _errorMessage = null;
+      _currentColors = null;
       _isLoading = false; // S'assurer que loading est bien à false
       _scannerKey++; // Changer la clé pour forcer la recréation du scanner
     });

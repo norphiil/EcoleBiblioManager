@@ -184,6 +184,10 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         throw Exception('Aucune caméra disponible');
       }
 
+      // Note: Les erreurs de threading camera_windows dans la console sont normales
+      // et n'affectent pas le fonctionnement du scanner
+      debugPrint('ℹ️ Note: Les messages d\'erreur de threading camera_windows sont un bug connu du plugin et peuvent être ignorés');
+      
       await _initializeCamera();
       _startPeriodicCapture();
 
@@ -200,14 +204,39 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     }
   }
 
-  /// Initialise la caméra
+  /// Initialise la caméra avec gestion des erreurs de threading Windows
   Future<void> _initializeCamera() async {
-    _controller = CameraController(
-      _cameras[_selectedCameraIndex],
-      ResolutionPreset.high,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-    await _controller!.initialize();
+    try {
+      _controller = CameraController(
+        _cameras[_selectedCameraIndex],
+        ResolutionPreset.high,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+        enableAudio: false, // Désactiver l'audio pour éviter des problèmes de ressources
+      );
+      
+      // Initialiser avec gestion d'erreur pour le bug camera_windows
+      await _controller!.initialize();
+      
+      // Vérifier que l'initialisation a réussi
+      if (!_controller!.value.isInitialized) {
+        throw CameraException('camera_init_failed', 'La caméra n\'a pas pu être initialisée');
+      }
+    } on CameraException catch (e) {
+      // Gérer spécifiquement les erreurs de caméra
+      debugPrint('⚠️ Erreur caméra (ignorée si threading): ${e.code} - ${e.description}');
+      
+      // Si c'est juste un problème de threading mais que la caméra fonctionne, continuer
+      if (_controller?.value.isInitialized == true) {
+        debugPrint('✓ Caméra initialisée malgré l\'erreur de threading');
+        return;
+      }
+      
+      // Sinon, propager l'erreur
+      rethrow;
+    } catch (e) {
+      debugPrint('❌ Erreur initialisation caméra: $e');
+      rethrow;
+    }
   }
 
   /// Démarre la capture périodique avec l'intervalle configuré
@@ -254,8 +283,16 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
           _processDetectionResults(barcodes!);
         }
       }
+    } on CameraException catch (e) {
+      // Ignorer les erreurs de threading du plugin camera_windows
+      if (e.description?.contains('thread') == true || 
+          e.description?.contains('ressources matérielles') == true) {
+        debugPrint('⚠️ Erreur de threading camera_windows ignorée: ${e.description}');
+      } else {
+        debugPrint('❌ Erreur caméra: ${e.code} - ${e.description}');
+      }
     } catch (e) {
-      debugPrint('Erreur capture: $e');
+      debugPrint('❌ Erreur capture: $e');
     } finally {
       // Éviter setState si le focus est sur le champ manuel
       if (!_manualIsbnFocusNode.hasFocus && mounted) {

@@ -107,15 +107,18 @@ class _ScanToShelveScreenState extends State<ScanToShelveScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Informations du livre',
+              'Informations du livre test',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const Divider(),
             
             if (_scannedBook != null) ...[
+              _buildInfoRow('Json: ', _scannedBook!.toJson().toString()),
               _buildInfoRow('Titre', _scannedBook!.title),
               _buildInfoRow('Auteur', _scannedBook!.author),
               _buildInfoRow('ISBN', _scannedBook!.isbn),
+              if (_scannedBook!.description != null && _scannedBook!.description!.isNotEmpty)
+                _buildInfoRow('Description', _scannedBook!.description!),
               if (_scannedBook!.publisher != null)
                 _buildInfoRow('Éditeur', _scannedBook!.publisher!),
               if (_scannedBook!.publishYear != null)

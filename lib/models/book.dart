@@ -5,6 +5,7 @@ class Book extends Synchronizable {
   String isbn;
   String title;
   String author;
+  String? description;
   String? publisher;
   int? publishYear;
   String? publishPlace;
@@ -30,6 +31,7 @@ class Book extends Synchronizable {
     required this.isbn,
     required this.title,
     required this.author,
+    this.description,
     this.publisher,
     this.publishYear,
     this.publishPlace,
@@ -44,20 +46,91 @@ class Book extends Synchronizable {
     this.lastModified,
   }) : _isDirty = false;
 
+  factory Book.concat(Book? b1, Book? b2) {
+    if (b1 == null && b2 == null) {
+      throw ArgumentError('Les deux livres ne peuvent pas être null');
+    }
+    if (b1 == null) {
+      return b2!;
+    }
+    if (b2 == null) {
+      return b1;
+    }
+    return Book(
+      isbn: b1.isbn.isNotEmpty ? b1.isbn : b2.isbn,
+      title: b1.title.isNotEmpty ? b1.title : b2.title,
+      author: b1.author.isNotEmpty ? b1.author : b2.author,
+      description: b1.description ?? b2.description,
+      publisher: b1.publisher ?? b2.publisher,
+      publishYear: b1.publishYear ?? b2.publishYear,
+      publishPlace: b1.publishPlace ?? b2.publishPlace,
+      pageCount: b1.pageCount ?? b2.pageCount,
+      subjects: b1.subjects.isNotEmpty ? b1.subjects : b2.subjects,
+      coverImageUrl: b1.coverImageUrl ?? b2.coverImageUrl
+    );
+  }
+
   /// Constructeur depuis une réponse API (OpenLibrary)
-  factory Book.fromApiResponse(Map<String, dynamic> json, String isbn) {
+  factory Book.fromOpenLibraryResponse(Map<String, dynamic> json, String isbn) {
     final bookData = json['ISBN:$isbn'] ?? json;
     
     return Book(
       isbn: isbn,
       title: bookData['title'] ?? 'Titre inconnu',
       author: _extractAuthor(bookData),
+      description: bookData['description']?.toString(),
       publisher: _extractPublisher(bookData),
       publishYear: _extractPublishYear(bookData),
       publishPlace: _extractPublishPlace(bookData),
       pageCount: bookData['number_of_pages'],
       subjects: _extractSubjects(bookData),
       coverImageUrl: _extractCoverImage(bookData),
+    );
+  }
+
+  /// Constructeur depuis une réponse API (Google Books)
+  factory Book.fromGoogleBooksResponse(Map<String, dynamic> json, String isbn) {
+    // Extraction de l'auteur
+    String author = 'Auteur inconnu';
+    if (json['authors'] is List && (json['authors'] as List).isNotEmpty) {
+      author = (json['authors'] as List).first.toString();
+    }
+
+    // Extraction de l'année de publication
+    int? publishYear;
+    if (json['publishedDate'] != null) {
+      final dateStr = json['publishedDate'].toString();
+      // Format peut être "2012" ou "2012-03-21"
+      publishYear = int.tryParse(dateStr.split('-').first);
+    }
+
+    // Extraction de l'image de couverture
+    String? coverUrl;
+    if (json['imageLinks'] is Map) {
+      final imageLinks = json['imageLinks'] as Map;
+      // Préférer thumbnail, puis smallThumbnail
+      coverUrl = imageLinks['thumbnail'] ?? imageLinks['smallThumbnail'];
+    }
+
+    // Extraction des sujets/catégories
+    List<String> subjects = [];
+    if (json['categories'] is List) {
+      subjects = (json['categories'] as List)
+          .map((cat) => cat.toString())
+          .toList();
+    }
+
+    return Book(
+      isbn: isbn,
+      title: json['title']?.toString() ?? 'Titre inconnu',
+      author: author,
+      description: json['description']?.toString(),
+      publisher: json['publisher']?.toString(),
+      publishYear: publishYear,
+      publishPlace: null, // Google Books n'inclut pas le lieu de publication
+      pageCount: json['pageCount'] as int?,
+      subjects: subjects,
+      coverImageUrl: coverUrl,
     );
   }
 
@@ -68,18 +141,19 @@ class Book extends Synchronizable {
       isbn: row.isNotEmpty ? row[0]?.toString() ?? '' : '',
       title: row.length > 1 ? row[1]?.toString() ?? '' : '',
       author: row.length > 2 ? row[2]?.toString() ?? '' : '',
-      publisher: row.length > 3 && row[3]?.toString().isNotEmpty == true ? row[3].toString() : null,
-      publishYear: row.length > 4 && row[4] != null ? int.tryParse(row[4].toString()) : null,
-      publishPlace: row.length > 5 && row[5]?.toString().isNotEmpty == true ? row[5].toString() : null,
-      pageCount: row.length > 6 && row[6] != null ? int.tryParse(row[6].toString()) : null,
-      subjects: row.length > 7 && row[7]?.toString().isNotEmpty == true ? row[7].toString().split(';') : [],
-      coverImageUrl: row.length > 8 && row[8]?.toString().isNotEmpty == true ? row[8].toString() : null,
-      groupId: row.length > 9 && row[9]?.toString().isNotEmpty == true ? row[9].toString() : null,
-      status: row.length > 10 ? BookStatus.fromString(row[10]?.toString() ?? 'available') : BookStatus.available,
-      borrowedBy: row.length > 11 && row[11]?.toString().isNotEmpty == true ? row[11].toString() : null,
-      borrowerClassName: row.length > 12 && row[12]?.toString().isNotEmpty == true ? row[12].toString() : null,
-      borrowedDate: row.length > 13 && row[13]?.toString().isNotEmpty == true ? DateTime.tryParse(row[13].toString()) : null,
-      lastModified: row.length > 14 && row[14]?.toString().isNotEmpty == true ? DateTime.tryParse(row[14].toString()) : null,
+      description: row.length > 3 && row[3]?.toString().isNotEmpty == true ? row[3].toString() : null,
+      publisher: row.length > 4 && row[4]?.toString().isNotEmpty == true ? row[4].toString() : null,
+      publishYear: row.length > 5 && row[5] != null ? int.tryParse(row[5].toString()) : null,
+      publishPlace: row.length > 6 && row[6]?.toString().isNotEmpty == true ? row[6].toString() : null,
+      pageCount: row.length > 7 && row[7] != null ? int.tryParse(row[7].toString()) : null,
+      subjects: row.length > 8 && row[8]?.toString().isNotEmpty == true ? row[8].toString().split(';') : [],
+      coverImageUrl: row.length > 9 && row[9]?.toString().isNotEmpty == true ? row[9].toString() : null,
+      groupId: row.length > 10 && row[10]?.toString().isNotEmpty == true ? row[10].toString() : null,
+      status: row.length > 11 ? BookStatus.fromString(row[11]?.toString() ?? 'available') : BookStatus.available,
+      borrowedBy: row.length > 12 && row[12]?.toString().isNotEmpty == true ? row[12].toString() : null,
+      borrowerClassName: row.length > 13 && row[13]?.toString().isNotEmpty == true ? row[13].toString() : null,
+      borrowedDate: row.length > 14 && row[14]?.toString().isNotEmpty == true ? DateTime.tryParse(row[14].toString()) : null,
+      lastModified: row.length > 15 && row[15]?.toString().isNotEmpty == true ? DateTime.tryParse(row[15].toString()) : null,
     );
   }
 
@@ -154,6 +228,7 @@ class Book extends Synchronizable {
       'isbn': isbn,
       'title': title,
       'author': author,
+      'description': description,
       'publisher': publisher,
       'publishYear': publishYear,
       'publishPlace': publishPlace,
@@ -175,6 +250,7 @@ class Book extends Synchronizable {
       isbn,
       title,
       author,
+      description ?? '',
       publisher ?? '',
       publishYear?.toString() ?? '',
       publishPlace ?? '',
@@ -259,6 +335,7 @@ class Book extends Synchronizable {
     String? isbn,
     String? title,
     String? author,
+    String? description,
     String? publisher,
     int? publishYear,
     String? publishPlace,
@@ -275,6 +352,7 @@ class Book extends Synchronizable {
       isbn: isbn ?? this.isbn,
       title: title ?? this.title,
       author: author ?? this.author,
+      description: description ?? this.description,
       publisher: publisher ?? this.publisher,
       publishYear: publishYear ?? this.publishYear,
       publishPlace: publishPlace ?? this.publishPlace,

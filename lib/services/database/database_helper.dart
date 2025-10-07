@@ -33,7 +33,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -47,6 +47,7 @@ class DatabaseHelper {
         isbn TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         author TEXT NOT NULL,
+        description TEXT,
         publisher TEXT,
         publishYear INTEGER,
         publishPlace TEXT,
@@ -227,6 +228,16 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE book_groups ADD COLUMN groupColor TEXT');
       
       print('Migration v3→v4 terminée avec succès');
+    }
+    
+    if (oldVersion < 5) {
+      // Migration vers version 5 : Ajouter description aux livres
+      print('Migration de la base de données de v$oldVersion vers v5');
+      
+      // Ajouter la colonne description à books
+      await db.execute('ALTER TABLE books ADD COLUMN description TEXT');
+      
+      print('Migration v4→v5 terminée avec succès');
     }
   }
 
@@ -461,6 +472,7 @@ class DatabaseHelper {
       isbn: map['isbn'] as String,
       title: map['title'] as String,
       author: map['author'] as String,
+      description: map['description'] as String?,
       publisher: map['publisher'] as String?,
       publishYear: map['publishYear'] as int?,
       publishPlace: map['publishPlace'] as String?,
@@ -486,6 +498,7 @@ class DatabaseHelper {
       'isbn': book.isbn,
       'title': book.title,
       'author': book.author,
+      'description': book.description,
       'publisher': book.publisher,
       'publishYear': book.publishYear,
       'publishPlace': book.publishPlace,
