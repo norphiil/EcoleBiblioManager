@@ -41,6 +41,26 @@ class Student {
     };
   }
 
+  /// Constructeur depuis Supabase JSON
+  factory Student.fromSupabaseJson(Map<String, dynamic> json) {
+    return Student(
+      id: json['id'] as String,
+      firstName: json['first_name'] as String,
+      lastName: json['last_name'] as String,
+      classId: json['class_id'] as String? ?? '',
+    );
+  }
+
+  /// Convertit en JSON pour Supabase
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'id': id,
+      'first_name': firstName,
+      'last_name': lastName,
+      'class_id': classId.isEmpty ? null : classId,
+    };
+  }
+
   /// Copier avec modifications
   Student copyWith({
     String? id,

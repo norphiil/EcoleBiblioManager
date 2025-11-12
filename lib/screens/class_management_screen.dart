@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/database/database_helper.dart';
+import '../services/database/tracked_database_service.dart';
 import '../models/models.dart';
 
 /// Écran de gestion des classes scolaires
@@ -13,6 +14,7 @@ class ClassManagementScreen extends StatefulWidget {
 
 class _ClassManagementScreenState extends State<ClassManagementScreen> {
   late final DatabaseHelper _dbHelper;
+  late final TrackedDatabaseService _trackedDb;
   
   List<ClassRoom> _classes = [];
   bool _isLoading = true;
@@ -22,6 +24,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
   void initState() {
     super.initState();
     _dbHelper = DatabaseHelper();
+    _trackedDb = TrackedDatabaseService(_dbHelper);
     _loadClasses();
   }
 
@@ -401,12 +404,12 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
         students: students,
       );
 
-      await _dbHelper.addClass(newClass);
+      await _trackedDb.addClass(newClass);
 
       // Ajouter les élèves à la base de données
       for (final student in students) {
         final studentWithClass = student.copyWith(classId: newClass.id);
-        await _dbHelper.addStudent(studentWithClass);
+        await _trackedDb.addStudent(studentWithClass);
       }
 
       if (mounted) {
@@ -572,7 +575,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
         students: updatedStudents,
       );
 
-      await _dbHelper.updateClass(updatedClass);
+      await _trackedDb.updateClass(updatedClass);
 
       // Gérer les changements d'élèves
       // 1. Récupérer les anciens élèves
@@ -581,7 +584,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
       // 2. Supprimer les élèves qui ont été supprimés
       for (final oldStudent in oldStudents) {
         if (!updatedStudents.any((s) => s.id == oldStudent.id)) {
-          await _dbHelper.deleteStudent(oldStudent.id);
+          await _trackedDb.deleteStudent(oldStudent.id);
         }
       }
       
@@ -590,11 +593,11 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
         if (oldStudents.any((s) => s.id == student.id)) {
           // Élève existant, le mettre à jour avec le bon classId
           final updatedStudent = student.copyWith(classId: classRoom.id);
-          await _dbHelper.updateStudent(updatedStudent);
+          await _trackedDb.updateStudent(updatedStudent);
         } else {
           // Nouvel élève, l'ajouter avec le bon classId
           final studentWithClass = student.copyWith(classId: classRoom.id);
-          await _dbHelper.addStudent(studentWithClass);
+          await _trackedDb.addStudent(studentWithClass);
         }
       }
 
@@ -653,11 +656,11 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
 
   Future<void> _deleteClass(ClassRoom classRoom) async {
     try {
-      // Supprimer tous les élèves de la classe (cascade)
-      await _dbHelper.deleteStudentsByClass(classRoom.id);
+      // Supprimer tous les élèves de la classe (cascade) - avec tracking
+      await _trackedDb.deleteStudentsByClass(classRoom.id);
       
-      // Supprimer la classe
-      await _dbHelper.deleteClass(classRoom.id);
+      // Supprimer la classe - avec tracking
+      await _trackedDb.deleteClass(classRoom.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -1,16 +1,16 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/utils/logger.dart';
-import 'google_sheets/google_sheets_service.dart';
+import 'supabase/supabase_service.dart';
 import 'database/database_helper.dart';
-import 'database/sync_service.dart';
+import 'database/complete_sync_service.dart';
 import 'database/local_database_service.dart';
 
 /// Service pour l'initialisation de l'application
 class InitializationService extends ChangeNotifier {
-  final GoogleSheetsService _googleSheetsService;
+  final SupabaseService _supabaseService;
   final DatabaseHelper _databaseHelper;
-  late final SyncService _syncService;
+  late final CompleteSyncService _completeSyncService;
   late final LocalDatabaseService _localDbService;
   final Logger _logger = Logger('InitializationService');
   
@@ -20,13 +20,16 @@ class InitializationService extends ChangeNotifier {
   double _progress = 0.0;
   bool _offlineMode = false;
   
-  InitializationService(this._googleSheetsService, this._databaseHelper) {
-    _syncService = SyncService(_databaseHelper, _googleSheetsService);
+  InitializationService(this._supabaseService, this._databaseHelper) {
+    _completeSyncService = CompleteSyncService(
+      dbHelper: _databaseHelper,
+      supabaseService: _supabaseService,
+    );
     _localDbService = LocalDatabaseService(_databaseHelper);
   }
   
-  /// Accès au service de synchronisation
-  SyncService get syncService => _syncService;
+  /// Accès au service de synchronisation complète (3 phases)
+  CompleteSyncService get completeSyncService => _completeSyncService;
   
   /// Accès au service de base de données locale
   LocalDatabaseService get localDbService => _localDbService;
@@ -50,39 +53,45 @@ class InitializationService extends ChangeNotifier {
       await _databaseHelper.database; // Force l'initialisation
       _updateProgress('Base de données locale prête', 0.2);
       
-      // Étape 2: Initialisation du service Google Sheets (si non hors-ligne)
+      // Étape 2: Test de connexion Supabase (si non hors-ligne)
       if (!_offlineMode) {
-        _updateProgress('Connexion à Google Sheets...', 0.3);
-        await _googleSheetsService.initialize();
+        _updateProgress('Connexion à Supabase...', 0.3);
+        final isConnected = await _supabaseService.testConnection();
+        if (!isConnected) {
+          throw Exception('Impossible de se connecter à Supabase');
+        }
         _updateProgress('Connexion établie', 0.4);
       } else {
-        _updateProgress('Mode hors-ligne activé - Google Sheets ignoré', 0.4);
+        _updateProgress('Mode hors-ligne activé - Supabase ignoré', 0.4);
       }
       
-      // Étape 3: Création des feuilles si nécessaire (si non hors-ligne)
+      // Étape 3: Vérification des tables Supabase (si non hors-ligne)
       if (!_offlineMode) {
-        _updateProgress('Initialisation des feuilles Google Sheets...', 0.5);
-        await _googleSheetsService.initializeSheets();
-        _updateProgress('Feuilles Google Sheets prêtes', 0.6);
+        _updateProgress('Vérification des tables Supabase...', 0.5);
+        // Pas besoin d'initialiser les tables, elles sont déjà créées via SQL
+        _updateProgress('Tables Supabase prêtes', 0.6);
       } else {
         _updateProgress('Initialisation des services locaux...', 0.6);
       }
       
-      // Étape 4: Synchronisation initiale (import depuis Google Sheets)
+      // Étape 4: Synchronisation complète (STARTUP)
       if (!_offlineMode) {
-        _updateProgress('Synchronisation des données...', 0.7);
-        await _syncService.initialSync();
+        _updateProgress('Synchronisation au démarrage (clear + download + execute)...', 0.7);
+        final syncSuccess = await _completeSyncService.performStartupSync();
+        if (!syncSuccess) {
+          _logger.warning('⚠️  Sync partiellement échouée, continuant...');
+        }
         _updateProgress('Données synchronisées', 0.9);
       } else {
         _updateProgress('Mode hors-ligne: utilisation des données locales', 0.9);
       }
       
-      // Étape 5: Démarrage de la synchronisation périodique en arrière-plan (si non hors-ligne)
+      // Étape 5: Sync périodique désactivée pour SmartSyncService
+      // (À implémenter si besoin d'upload des changements locaux)
       if (!_offlineMode) {
-        _updateProgress('Démarrage de la synchronisation automatique...', 0.95);
-        _syncService.startPeriodicSync(interval: const Duration(minutes: 5));
+        _updateProgress('Sync initialisée', 0.95);
       } else {
-        _updateProgress('Synchronisation désactivée (hors-ligne)', 0.95);
+        _updateProgress('Mode hors-ligne: changements sauvegardés localement', 0.95);
       }
       
       // Étape 6: Finalisation
@@ -134,11 +143,8 @@ class InitializationService extends ChangeNotifier {
 
   /// Active le mode hors-ligne et termine l'initialisation avec les données locales
   Future<void> goOffline() async {
-    // Marquer le mode hors-ligne et arrêter toute sync si démarrée
+    // Marquer le mode hors-ligne (SmartSyncService n'a pas de sync périodique)
     _offlineMode = true;
-    try {
-      _syncService.stopPeriodicSync();
-    } catch (_) {}
 
     _updateStatus(InitializationStatus.inProgress, 'Activation du mode hors-ligne...', _progress);
 

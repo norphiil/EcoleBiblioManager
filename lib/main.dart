@@ -2,11 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/constants/app_constants.dart';
 import 'services/services.dart';
+import 'services/supabase/supabase_service.dart';
 import 'services/log_service.dart';
 import 'screens/initialization_screen.dart';
 import 'widgets/app_exit_handler.dart';
@@ -48,6 +50,18 @@ void main() async {
     await logService.logError('Erreur chargement .env', e, null);
   }
   
+  // Initialiser Supabase
+  try {
+    await Supabase.initialize(
+      url: dotenv.env['SUPABASE_URL']!,
+      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    );
+    await logService.log('✅ Supabase initialisé');
+  } catch (e) {
+    print('Erreur lors de l\'initialisation de Supabase: $e');
+    await logService.logError('Erreur initialisation Supabase', e, null);
+  }
+  
   runApp(const EBMApp());
 }
 
@@ -68,14 +82,14 @@ class EBMApp extends StatelessWidget {
         Provider<BarcodeService>(
           create: (_) => BarcodeService(),
         ),
-        Provider<GoogleSheetsService>(
-          create: (_) => GoogleSheetsService(),
+        Provider<SupabaseService>(
+          create: (_) => SupabaseService(),
         ),
         
         // Service d'initialisation avec BDD locale
         ChangeNotifierProvider<InitializationService>(
           create: (context) => InitializationService(
-            context.read<GoogleSheetsService>(),
+            context.read<SupabaseService>(),
             context.read<DatabaseHelper>(),
           ),
         ),
@@ -86,10 +100,15 @@ class EBMApp extends StatelessWidget {
             initService.isCompleted ? initService.localDbService : null,
         ),
         
-        // Service de synchronisation (après initialisation)
-        ProxyProvider<InitializationService, SyncService?>(
+        // Service de synchronisation complète (après initialisation)
+        ProxyProvider<InitializationService, CompleteSyncService?>(
           update: (_, initService, __) => 
-            initService.isCompleted ? initService.syncService : null,
+            initService.isCompleted ? initService.completeSyncService : null,
+        ),
+        
+        // Service de base de données avec tracking automatique (après initialisation)
+        ProxyProvider<DatabaseHelper, TrackedDatabaseService?>(
+          update: (_, dbHelper, __) => TrackedDatabaseService(dbHelper),
         ),
       ],
       child: const EBMAppContent(),

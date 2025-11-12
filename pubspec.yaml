@@ -90,6 +90,9 @@ dependencies:
   
   # Gestion de la fenêtre (Desktop)
   window_manager: ^0.4.2
+  
+  # Base de données Supabase (remplace Google Sheets)
+  supabase_flutter: ^2.8.0
 
 dev_dependencies:
   flutter_test:

@@ -33,7 +33,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -125,6 +125,19 @@ class DatabaseHelper {
       )
     ''');
 
+    // Table des actions hors ligne (changelog local)
+    await db.execute('''
+      CREATE TABLE changelog_local (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        data TEXT,
+        created_at TEXT NOT NULL,
+        synced INTEGER DEFAULT 0
+      )
+    ''');
+
     // Index pour améliorer les performances
     await db.execute('CREATE INDEX idx_books_groupId ON books(groupId)');
     await db.execute('CREATE INDEX idx_books_status ON books(status)');
@@ -135,6 +148,8 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_borrow_history_isbn ON borrow_history(isbn)');
     await db.execute('CREATE INDEX idx_borrow_history_borrowedAt ON borrow_history(borrowedAt)');
     await db.execute('CREATE INDEX idx_borrow_history_classId ON borrow_history(classId)');
+    await db.execute('CREATE INDEX idx_changelog_synced ON changelog_local(synced)');
+    await db.execute('CREATE INDEX idx_changelog_entity ON changelog_local(entity_type, entity_id)');
   }
 
   /// Met à jour la base de données lors d'un changement de version
@@ -271,6 +286,30 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX idx_students_classId ON students(classId)');
       
       print('Migration v5→v6 terminée avec succès');
+    }
+
+    if (oldVersion < 7) {
+      // Migration vers version 7 : Ajouter table changelog_local pour sync 3 phases
+      print('Migration de la base de données de v$oldVersion vers v7');
+      
+      // Créer la table changelog_local
+      await db.execute('''
+        CREATE TABLE changelog_local (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          operation TEXT NOT NULL,
+          data TEXT,
+          created_at TEXT NOT NULL,
+          synced INTEGER DEFAULT 0
+        )
+      ''');
+      
+      // Créer les index pour performance
+      await db.execute('CREATE INDEX idx_changelog_synced ON changelog_local(synced)');
+      await db.execute('CREATE INDEX idx_changelog_entity ON changelog_local(entity_type, entity_id)');
+      
+      print('Migration v6→v7 terminée avec succès');
     }
   }
 
@@ -863,6 +902,94 @@ class DatabaseHelper {
       'borrowedAt': history.borrowedAt.toIso8601String(),
       'returnedAt': history.returnedAt?.toIso8601String(),
     };
+  }
+
+  // ==========================================
+  // MÉTHODES CHANGELOG LOCAL (Actions hors ligne)
+  // ==========================================
+
+  /// Ajoute une action au changelog local
+  Future<void> addToChangeLog({
+    required String entityType,
+    required String entityId,
+    required String operation,
+    Map<String, dynamic>? data,
+  }) async {
+    final db = await database;
+    await db.insert('changelog_local', {
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'operation': operation,
+      'data': data != null ? data.toString() : null,
+      'created_at': DateTime.now().toIso8601String(),
+      'synced': 0,
+    });
+  }
+
+  /// Récupère les actions non synchronisées
+  Future<List<Map<String, dynamic>>> getPendingOfflineChanges() async {
+    final db = await database;
+    return await db.query(
+      'changelog_local',
+      where: 'synced = ?',
+      whereArgs: [0],
+      orderBy: 'created_at ASC',
+    );
+  }
+
+  /// Vide toutes les tables SAUF changelog_local
+  Future<void> clearAllDataExceptChangelog() async {
+    final db = await database;
+    await db.delete('books');
+    await db.delete('students');
+    await db.delete('classes');
+    await db.delete('book_groups');
+    await db.delete('borrow_history');
+    await db.delete('sync_metadata');
+    print('✅ Base locale vidée (changelog_local préservé)');
+  }
+
+  /// Marque une action comme synchronisée
+  Future<void> markChangeLogAsSynced(String id) async {
+    final db = await database;
+    await db.update(
+      'changelog_local',
+      {'synced': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Récupère les actions déjà synchronisées
+  Future<List<Map<String, dynamic>>> getSyncedOfflineChanges() async {
+    final db = await database;
+    return await db.query(
+      'changelog_local',
+      where: 'synced = ?',
+      whereArgs: [1],
+    );
+  }
+
+  /// Archive/Supprime une action du changelog
+  Future<void> archiveChangeLog(String id) async {
+    final db = await database;
+    await db.delete(
+      'changelog_local',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Nettoie toutes les actions synchronisées
+  Future<void> cleanSyncedChangelog() async {
+    final db = await database;
+    final deleted = await db.delete(
+      'changelog_local',
+      where: 'synced = ?',
+      whereArgs: [1],
+    );
+    print('🧹 $deleted actions synchronisées supprimées du changelog');
   }
 
   /// Ferme la base de données

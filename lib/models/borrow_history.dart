@@ -62,6 +62,34 @@ class BorrowHistory {
   /// Convertir en JSON
   Map<String, dynamic> toJson() => toMap();
 
+  /// Constructeur depuis Supabase JSON
+  factory BorrowHistory.fromSupabaseJson(Map<String, dynamic> json) {
+    return BorrowHistory(
+      id: json['id'] as String?,
+      isbn: json['book_isbn'] as String,
+      bookTitle: '', // Sera rempli plus tard si nécessaire
+      borrowerName: json['borrower_name'] as String,
+      classId: json['borrower_class_id'] as String?,
+      className: null, // Sera rempli via jointure si nécessaire
+      borrowedAt: DateTime.parse(json['borrowed_at'] as String),
+      returnedAt: json['returned_at'] != null
+          ? DateTime.parse(json['returned_at'] as String)
+          : null,
+    );
+  }
+
+  /// Convertit en JSON pour Supabase
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      if (id != null) 'id': id,
+      'book_isbn': isbn,
+      'borrower_name': borrowerName,
+      'borrower_class_id': classId,
+      'borrowed_at': borrowedAt.toIso8601String(),
+      'returned_at': returnedAt?.toIso8601String(),
+    };
+  }
+
   /// Copier avec modifications
   BorrowHistory copyWith({
     String? id,

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/services.dart';
+import '../services/supabase/supabase_service.dart';
 import '../services/full_sync_service.dart';
 import '../screens/closing_sync_screen.dart';
 
@@ -180,17 +181,14 @@ class _AppExitHandlerState extends State<AppExitHandler>
     
     try {
       print('🔄 Synchronisation automatique en cours...');
-      final dbHelper = context.read<DatabaseHelper>();
-      final sheetsService = context.read<GoogleSheetsService>();
-      final fullSyncService = FullSyncService(dbHelper, sheetsService);
+      final completeSyncService = context.read<CompleteSyncService?>();
       
-      await fullSyncService.syncAllToSheets(
-        onProgress: (message) {
-          print('📡 $message');
-        },
-      );
-      
-      print('✅ Synchronisation automatique terminée');
+      if (completeSyncService != null) {
+        await completeSyncService.performShutdownSync();
+        print('✅ Synchronisation automatique terminée');
+      } else {
+        print('⚠️ CompleteSyncService non disponible');
+      }
     } catch (e) {
       print('❌ Erreur synchronisation automatique: $e');
     } finally {
@@ -244,15 +242,16 @@ class _AppExitHandlerState extends State<AppExitHandler>
           barrierDismissible: false,
           pageBuilder: (context, _, __) => ClosingSyncScreen(
             onSync: () async {
-              final dbHelper = context.read<DatabaseHelper>();
-              final sheetsService = context.read<GoogleSheetsService>();
-              final fullSyncService = FullSyncService(dbHelper, sheetsService);
+              final completeSyncService = context.read<CompleteSyncService?>();
               
-              await fullSyncService.syncAllToSheets(
-                onProgress: (message) {
-                  print('📡 $message');
-                },
-              );
+              if (completeSyncService == null) {
+                print('⚠️ CompleteSyncService non disponible');
+                return;
+              }
+              
+              // PHASE 3: Synchronisation à la fermeture
+              print('� Lancement de la synchronisation shutdown...');
+              await completeSyncService.performShutdownSync();
             },
           ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -320,9 +319,9 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _startSync() async {
     try {
       final dbHelper = context.read<DatabaseHelper>();
-      final sheetsService = context.read<GoogleSheetsService>();
+      final supabaseService = context.read<SupabaseService>();
       
-      final syncService = FullSyncService(dbHelper, sheetsService);
+      final syncService = FullSyncService(dbHelper, supabaseService);
       
       final result = await syncService.syncAllToSheets(
         onProgress: (message) {

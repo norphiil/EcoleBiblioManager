@@ -130,6 +130,32 @@ class BookGroup extends Synchronizable {
     ];
   }
 
+  /// Constructeur depuis Supabase JSON
+  factory BookGroup.fromSupabaseJson(Map<String, dynamic> json) {
+    return BookGroup(
+      id: json['key'] as String, // Supabase utilise 'key' comme PK
+      title: json['title'] as String,
+      key: json['key'] as String,
+      logoPath: null, // Pas utilisé dans Supabase
+      svgData: null, // Pas utilisé dans Supabase
+      groupColor: json['color'] as String?,
+      keywords: [], // Pas stocké dans Supabase pour simplifier
+      description: null,
+      lastModified: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : null,
+    );
+  }
+
+  /// Convertit en JSON pour Supabase
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'key': key,
+      'title': title,
+      'color': groupColor ?? '#2196F3',
+    };
+  }
+
   @override
   String getId() => id;
 

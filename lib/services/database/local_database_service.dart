@@ -1,13 +1,17 @@
 import 'package:logger/logger.dart';
 import '../../models/models.dart';
 import 'database_helper.dart';
+import 'tracked_database_service.dart';
 
 /// Service de base de données locale - Interface principale pour les opérations CRUD
 class LocalDatabaseService {
   final DatabaseHelper _dbHelper;
+  late final TrackedDatabaseService _trackedDb;
   final Logger _logger = Logger();
 
-  LocalDatabaseService(this._dbHelper);
+  LocalDatabaseService(this._dbHelper) {
+    _trackedDb = TrackedDatabaseService(_dbHelper);
+  }
 
   // ==================== LIVRES ====================
 
@@ -50,7 +54,7 @@ class LocalDatabaseService {
   /// Ajoute un livre (rapide - dans SQLite, sync plus tard)
   Future<Book> addBook(Book book) async {
     _logger.i('➕ Ajout du livre: ${book.title}');
-    await _dbHelper.insertBook(book);
+    await _trackedDb.insertBook(book);
     _logger.i('✅ Livre ajouté localement (sera synchronisé)');
     return book;
   }
@@ -58,7 +62,7 @@ class LocalDatabaseService {
   /// Met à jour un livre (rapide - dans SQLite, sync plus tard)
   Future<Book> updateBook(Book book) async {
     _logger.i('🔄 Mise à jour du livre: ${book.title}');
-    await _dbHelper.updateBook(book);
+    await _trackedDb.updateBook(book);
     _logger.i('✅ Livre mis à jour localement (sera synchronisé)');
     return book;
   }
@@ -66,7 +70,7 @@ class LocalDatabaseService {
   /// Supprime un livre (rapide - dans SQLite, sync plus tard)
   Future<void> deleteBook(String isbn) async {
     _logger.i('🗑️  Suppression du livre ISBN: $isbn');
-    await _dbHelper.deleteBook(isbn);
+    await _trackedDb.deleteBook(isbn);
     _logger.i('✅ Livre supprimé localement (sera synchronisé)');
   }
 
@@ -99,7 +103,7 @@ class LocalDatabaseService {
     print('  - ID: ${group.id}');
     print('  - svgData: ${group.svgData != null ? "${group.svgData!.length} chars" : "null"}');
     print('  - groupColor: ${group.groupColor}');
-    await _dbHelper.insertGroup(group);
+    await _trackedDb.insertGroup(group);
     _logger.i('✅ Groupe ajouté localement (sera synchronisé)');
     return group;
   }
@@ -111,7 +115,7 @@ class LocalDatabaseService {
     print('  - ID: ${group.id}');
     print('  - svgData: ${group.svgData != null ? "${group.svgData!.length} chars" : "null"}');
     print('  - groupColor: ${group.groupColor}');
-    await _dbHelper.updateGroup(group);
+    await _trackedDb.updateGroup(group);
     _logger.i('✅ Groupe mis à jour localement (sera synchronisé)');
     return group;
   }
@@ -128,11 +132,11 @@ class LocalDatabaseService {
       // Dissocier tous les livres du groupe
       for (final book in books) {
         final updatedBook = book.copyWith(groupId: null);
-        await _dbHelper.updateBook(updatedBook);
+        await _trackedDb.updateBook(updatedBook);
       }
     }
     
-    await _dbHelper.deleteGroup(id);
+    await _trackedDb.deleteGroup(id);
     _logger.i('✅ Groupe supprimé localement (sera synchronisé)');
   }
 

@@ -266,6 +266,56 @@ class Book extends Synchronizable {
     ];
   }
 
+  /// Constructeur depuis Supabase JSON
+  factory Book.fromSupabaseJson(Map<String, dynamic> json) {
+    return Book(
+      isbn: json['isbn'] as String,
+      title: json['title'] as String,
+      author: json['author'] as String,
+      description: json['description'] as String?,
+      publisher: json['publisher'] as String?,
+      publishYear: json['publish_year'] as int?,
+      publishPlace: json['publish_place'] as String?,
+      pageCount: json['page_count'] as int?,
+      subjects: json['subjects'] != null 
+          ? List<String>.from(json['subjects'] as List)
+          : [],
+      coverImageUrl: json['cover_image_url'] as String?,
+      groupId: json['group_id'] as String?,
+      status: BookStatus.fromString(json['status'] as String? ?? 'available'),
+      borrowedBy: json['borrowed_by'] as String?,
+      borrowerClassName: json['borrower_class_name'] as String?,
+      borrowedDate: json['borrowed_date'] != null
+          ? DateTime.parse(json['borrowed_date'] as String)
+          : null,
+      lastModified: json['last_modified'] != null
+          ? DateTime.parse(json['last_modified'] as String)
+          : null,
+    );
+  }
+
+  /// Convertit en JSON pour Supabase
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'isbn': isbn,
+      'title': title,
+      'author': author,
+      'description': description,
+      'publisher': publisher,
+      'publish_year': publishYear,
+      'publish_place': publishPlace,
+      'page_count': pageCount,
+      'subjects': subjects,
+      'cover_image_url': coverImageUrl,
+      'group_id': groupId,
+      'status': status.toString(),
+      'borrowed_by': borrowedBy,
+      'borrower_class_name': borrowerClassName,
+      'borrowed_date': borrowedDate?.toIso8601String(),
+      'last_modified': (lastModified ?? DateTime.now()).toIso8601String(),
+    };
+  }
+
   @override
   String getId() => isbn;
 

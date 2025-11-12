@@ -1,14 +1,14 @@
 import 'database/database_helper.dart';
-import 'google_sheets/google_sheets_service.dart';
+import 'supabase/supabase_service.dart';
 
-/// Service pour synchroniser toute la base locale avec Google Sheets
+/// Service pour synchroniser toute la base locale avec Supabase
 class FullSyncService {
   final DatabaseHelper _dbHelper;
-  final GoogleSheetsService _sheetsService;
+  final SupabaseService _supabaseService;
 
-  FullSyncService(this._dbHelper, this._sheetsService);
+  FullSyncService(this._dbHelper, this._supabaseService);
 
-  /// Synchronise toutes les données locales vers Google Sheets
+  /// Synchronise toutes les données locales vers Supabase
   Future<SyncResult> syncAllToSheets({
     Function(String)? onProgress,
   }) async {
@@ -66,15 +66,15 @@ class FullSyncService {
       for (final group in localGroups) {
         try {
           // Vérifier si existe dans Sheets
-          final sheetsGroups = await _sheetsService.searchBookGroups('id', group.id);
+          final sheetsGroups = await _supabaseService.searchBookGroups('id', group.id);
           
           if (sheetsGroups.isEmpty) {
             // Ajouter
-            await _sheetsService.addBookGroup(group);
+            await _supabaseService.addGroup(group);
             result.success++;
           } else {
             // Mettre à jour
-            await _sheetsService.updateBookGroup(group);
+            await _supabaseService.updateGroup(group);
             result.success++;
           }
         } catch (e) {
@@ -98,15 +98,15 @@ class FullSyncService {
       for (final classRoom in localClasses) {
         try {
           // Vérifier si existe dans Sheets
-          final sheetsClasses = await _sheetsService.searchClasses('id', classRoom.id);
+          final sheetsClasses = await _supabaseService.searchClasses('id', classRoom.id);
           
           if (sheetsClasses.isEmpty) {
             // Ajouter
-            await _sheetsService.addClass(classRoom);
+            await _supabaseService.addClass(classRoom);
             result.success++;
           } else {
             // Mettre à jour
-            await _sheetsService.updateClass(classRoom);
+            await _supabaseService.updateClass(classRoom);
             result.success++;
           }
         } catch (e) {
@@ -130,15 +130,15 @@ class FullSyncService {
       for (final student in localStudents) {
         try {
           // Vérifier si existe dans Sheets
-          final sheetsStudents = await _sheetsService.searchStudents('id', student.id);
+          final sheetsStudents = await _supabaseService.searchStudents('id', student.id);
           
           if (sheetsStudents.isEmpty) {
             // Ajouter
-            await _sheetsService.addStudent(student);
+            await _supabaseService.addStudent(student);
             result.success++;
           } else {
             // Mettre à jour
-            await _sheetsService.updateStudent(student);
+            await _supabaseService.updateStudent(student);
             result.success++;
           }
         } catch (e) {
@@ -162,15 +162,15 @@ class FullSyncService {
       for (final book in localBooks) {
         try {
           // Vérifier si existe dans Sheets
-          final sheetsBooks = await _sheetsService.searchBooks('isbn', book.isbn);
+          final sheetsBooks = await _supabaseService.searchBooks('isbn', book.isbn);
           
           if (sheetsBooks.isEmpty) {
             // Ajouter
-            await _sheetsService.addBook(book);
+            await _supabaseService.addBook(book);
             result.success++;
           } else {
             // Mettre à jour
-            await _sheetsService.updateBook(book);
+            await _supabaseService.updateBook(book);
             result.success++;
           }
         } catch (e) {
@@ -197,15 +197,15 @@ class FullSyncService {
           final historyId = history.id ?? '';
           if (historyId.isEmpty) continue; // Ignorer si pas d'ID
           
-          final sheetsHistory = await _sheetsService.searchBorrowHistory('id', historyId);
+          final sheetsHistory = await _supabaseService.searchBorrowHistory('id', historyId);
           
           if (sheetsHistory.isEmpty) {
             // Ajouter
-            await _sheetsService.addBorrowHistory(history);
+            await _supabaseService.addBorrowHistory(history);
             result.success++;
           } else {
             // Mettre à jour
-            await _sheetsService.updateBorrowHistory(history);
+            await _supabaseService.updateBorrowHistory(history);
             result.success++;
           }
         } catch (e) {

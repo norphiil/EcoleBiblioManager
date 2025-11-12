@@ -31,6 +31,23 @@ class ClassRoom {
     };
   }
 
+  /// Constructeur depuis Supabase JSON
+  factory ClassRoom.fromSupabaseJson(Map<String, dynamic> json) {
+    return ClassRoom(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      students: const [],
+    );
+  }
+
+  /// Convertit en JSON pour Supabase
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'id': id,
+      'name': name,
+    };
+  }
+
   /// Copier avec modifications
   ClassRoom copyWith({
     String? id,

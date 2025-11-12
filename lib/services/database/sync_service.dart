@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:logger/logger.dart';
 import '../../models/models.dart';
-import '../google_sheets/google_sheets_service.dart';
+import '../supabase/supabase_service.dart';
 import 'database_helper.dart';
 
-/// Service de synchronisation intelligente entre la base locale et Google Sheets
+/// Service de synchronisation intelligente entre la base locale et Supabase
 class SyncService {
   final DatabaseHelper _dbHelper;
-  final GoogleSheetsService _sheetsService;
+  final SupabaseService _supabaseService;
   final Logger _logger = Logger();
   
   bool _isSyncing = false;
@@ -20,7 +20,7 @@ class SyncService {
   List<ClassRoom>? _classesSnapshot;
   List<Student>? _studentsSnapshot;
 
-  SyncService(this._dbHelper, this._sheetsService);
+  SyncService(this._dbHelper, this._supabaseService);
 
   /// Indique si une synchronisation est en cours
   bool get isSyncing => _isSyncing;
@@ -106,9 +106,9 @@ class SyncService {
   Future<void> _syncClasses() async {
     _logger.i('🏫 ========== SYNCHRONISATION DES CLASSES ==========');
     
-    // Récupérer les classes de Google Sheets
-    final remoteClasses = await _sheetsService.getAllClasses();
-    _logger.i('☁️  ${remoteClasses.length} classes sur Google Sheets');
+    // Récupérer les classes de Supabase
+    final remoteClasses = await _supabaseService.getAllClasses();
+    _logger.i('☁️  ${remoteClasses.length} classes sur Supabase');
     
     // Récupérer les classes locales (depuis le snapshot)
     final localClasses = _classesSnapshot ?? [];
@@ -129,8 +129,8 @@ class SyncService {
     // 2. Classes présentes en local mais pas en remote → Ajouter en remote
     for (final localClass in localClasses) {
       if (!remoteClassesMap.containsKey(localClass.id)) {
-        _logger.i('⬆️  Ajout de la classe locale "${localClass.name}" sur Google Sheets');
-        await _sheetsService.addClass(localClass);
+        _logger.i('⬆️  Ajout de la classe locale "${localClass.name}" sur Supabase');
+        await _supabaseService.addClass(localClass);
       }
     }
     
@@ -138,8 +138,8 @@ class SyncService {
     for (final localClass in localClasses) {
       final remoteClass = remoteClassesMap[localClass.id];
       if (remoteClass != null && localClass.name != remoteClass.name) {
-        _logger.i('🔄 Mise à jour de la classe "${localClass.name}" sur Google Sheets');
-        await _sheetsService.updateClass(localClass);
+        _logger.i('🔄 Mise à jour de la classe "${localClass.name}" sur Supabase');
+        await _supabaseService.updateClass(localClass);
       }
     }
     
@@ -150,9 +150,9 @@ class SyncService {
   Future<void> _syncStudents() async {
     _logger.i('👨‍🎓 ========== SYNCHRONISATION DES ÉLÈVES ==========');
     
-    // Récupérer les élèves de Google Sheets
-    final remoteStudents = await _sheetsService.getAllStudents();
-    _logger.i('☁️  ${remoteStudents.length} élèves sur Google Sheets');
+    // Récupérer les élèves de Supabase
+    final remoteStudents = await _supabaseService.getAllStudents();
+    _logger.i('☁️  ${remoteStudents.length} élèves sur Supabase');
     
     // Récupérer les élèves locaux (depuis le snapshot)
     final localStudents = _studentsSnapshot ?? [];
@@ -173,8 +173,8 @@ class SyncService {
     // 2. Élèves présents en local mais pas en remote → Ajouter en remote
     for (final localStudent in localStudents) {
       if (!remoteStudentsMap.containsKey(localStudent.id)) {
-        _logger.i('⬆️  Ajout de l\'élève local "${localStudent.fullName}" sur Google Sheets');
-        await _sheetsService.addStudent(localStudent);
+        _logger.i('⬆️  Ajout de l\'élève local "${localStudent.fullName}" sur Supabase');
+        await _supabaseService.addStudent(localStudent);
       }
     }
     
@@ -186,8 +186,8 @@ class SyncService {
         if (localStudent.firstName != remoteStudent.firstName ||
             localStudent.lastName != remoteStudent.lastName ||
             localStudent.classId != remoteStudent.classId) {
-          _logger.i('🔄 Mise à jour de l\'élève "${localStudent.fullName}" sur Google Sheets');
-          await _sheetsService.updateStudent(localStudent);
+          _logger.i('🔄 Mise à jour de l\'élève "${localStudent.fullName}" sur Supabase');
+          await _supabaseService.updateStudent(localStudent);
         }
       }
     }
@@ -199,9 +199,9 @@ class SyncService {
   Future<void> _syncGroups() async {
     _logger.i('📚 ========== SYNCHRONISATION DES GROUPES ==========');
     
-    // Récupérer les groupes de Google Sheets
-    final remoteGroups = await _sheetsService.getAllBookGroups();
-    _logger.i('☁️  ${remoteGroups.length} groupes sur Google Sheets');
+    // Récupérer les groupes de Supabase
+    final remoteGroups = await _supabaseService.getAllGroups();
+    _logger.i('☁️  ${remoteGroups.length} groupes sur Supabase');
     
     // Récupérer les groupes locaux (depuis le snapshot)
     final localGroups = _groupsSnapshot ?? [];
@@ -223,8 +223,8 @@ class SyncService {
     // 2. Groupes présents en local mais pas en remote → Ajouter en remote
     for (final localGroup in localGroups) {
       if (!remoteGroupsMap.containsKey(localGroup.id)) {
-        _logger.i('⬆️  Ajout du groupe local "${localGroup.title}" sur Google Sheets');
-        await _sheetsService.addBookGroup(localGroup);
+        _logger.i('⬆️  Ajout du groupe local "${localGroup.title}" sur Supabase');
+        await _supabaseService.addGroup(localGroup);
         await _dbHelper.markGroupAsSynced(localGroup.id);
       }
     }
@@ -233,8 +233,8 @@ class SyncService {
     final pendingGroups = await _dbHelper.getPendingGroups();
     for (final localGroup in pendingGroups) {
       if (remoteGroupsMap.containsKey(localGroup.id)) {
-        _logger.i('🔄 Mise à jour du groupe "${localGroup.title}" sur Google Sheets');
-        await _sheetsService.updateBookGroup(localGroup);
+        _logger.i('🔄 Mise à jour du groupe "${localGroup.title}" sur Supabase');
+        await _supabaseService.updateGroup(localGroup);
         await _dbHelper.markGroupAsSynced(localGroup.id);
       }
     }
@@ -246,9 +246,9 @@ class SyncService {
   Future<void> _syncBooks() async {
     _logger.i('📖 ========== SYNCHRONISATION DES LIVRES ==========');
     
-    // Récupérer les livres de Google Sheets
-    final remoteBooks = await _sheetsService.getAllBooks();
-    _logger.i('☁️  ${remoteBooks.length} livres sur Google Sheets');
+    // Récupérer les livres de Supabase
+    final remoteBooks = await _supabaseService.getAllBooks();
+    _logger.i('☁️  ${remoteBooks.length} livres sur Supabase');
     
     // Récupérer les livres locaux (depuis le snapshot)
     final localBooks = _booksSnapshot ?? [];
@@ -270,8 +270,8 @@ class SyncService {
     // 2. Livres présents en local mais pas en remote → Ajouter en remote
     for (final localBook in localBooks) {
       if (!remoteBooksMap.containsKey(localBook.isbn)) {
-        _logger.i('⬆️  Ajout du livre local "${localBook.title}" sur Google Sheets');
-        await _sheetsService.addBook(localBook);
+        _logger.i('⬆️  Ajout du livre local "${localBook.title}" sur Supabase');
+        await _supabaseService.addBook(localBook);
         await _dbHelper.markBookAsSynced(localBook.isbn);
       }
     }
@@ -283,8 +283,8 @@ class SyncService {
     final pendingBooks = await _dbHelper.getPendingBooks();
     for (final localBook in pendingBooks) {
       if (remoteBooksMap.containsKey(localBook.isbn)) {
-        _logger.i('🔄 Mise à jour du livre "${localBook.title}" sur Google Sheets');
-        await _sheetsService.updateBook(localBook);
+        _logger.i('🔄 Mise à jour du livre "${localBook.title}" sur Supabase');
+        await _supabaseService.updateBook(localBook);
         await _dbHelper.markBookAsSynced(localBook.isbn);
       }
     }
@@ -317,7 +317,7 @@ class SyncService {
         // La version locale est plus récente → Mettre à jour en remote
         if (_hasBookChanged(localBook, remoteBook)) {
           _logger.i('⬆️  Mise à jour remote du livre "${localBook.title}" (local plus récent)');
-          await _sheetsService.updateBook(localBook);
+          await _supabaseService.updateBook(localBook);
           await _dbHelper.markBookAsSynced(localBook.isbn);
         }
       }
@@ -341,7 +341,7 @@ class SyncService {
     // Vérifier si c'est vraiment la première sync
     final lastSync = await _dbHelper.getLastSyncTime();
     if (lastSync == null) {
-      _logger.i('🆕 Première synchronisation - Import complet depuis Google Sheets');
+      _logger.i('🆕 Première synchronisation - Import complet depuis Supabase');
       await _fullSyncFromRemote();
     } else {
       _logger.i('🔄 Synchronisation normale (dernière sync: $lastSync)');
@@ -349,30 +349,30 @@ class SyncService {
     }
   }
 
-  /// Synchronisation complète depuis Google Sheets (première fois)
+  /// Synchronisation complète depuis Supabase (première fois)
   Future<void> _fullSyncFromRemote() async {
-    _logger.i('📥 Import complet depuis Google Sheets');
+    _logger.i('📥 Import complet depuis Supabase');
     
     try {
       // Vider la base locale
       await _dbHelper.clearAllData();
       
       // Importer toutes les classes
-      final remoteClasses = await _sheetsService.getAllClasses();
+      final remoteClasses = await _supabaseService.getAllClasses();
       _logger.i('📥 Import de ${remoteClasses.length} classes');
       for (final classRoom in remoteClasses) {
         await _dbHelper.addClass(classRoom);
       }
       
       // Importer tous les élèves
-      final remoteStudents = await _sheetsService.getAllStudents();
+      final remoteStudents = await _supabaseService.getAllStudents();
       _logger.i('📥 Import de ${remoteStudents.length} élèves');
       for (final student in remoteStudents) {
         await _dbHelper.addStudent(student);
       }
       
       // Importer tous les groupes
-      final remoteGroups = await _sheetsService.getAllBookGroups();
+      final remoteGroups = await _supabaseService.getAllGroups();
       _logger.i('📥 Import de ${remoteGroups.length} groupes');
       for (final group in remoteGroups) {
         await _dbHelper.insertGroup(group);
@@ -380,7 +380,7 @@ class SyncService {
       }
       
       // Importer tous les livres
-      final remoteBooks = await _sheetsService.getAllBooks();
+      final remoteBooks = await _supabaseService.getAllBooks();
       _logger.i('📥 Import de ${remoteBooks.length} livres');
       for (final book in remoteBooks) {
         await _dbHelper.insertBook(book);
