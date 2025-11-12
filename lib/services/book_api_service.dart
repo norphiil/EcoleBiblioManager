@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
 import '../models/models.dart';
 import '../core/utils/logger.dart';
 
@@ -113,14 +114,93 @@ class BookApiService {
     return Book.fromGoogleBooksResponse(bookData, isbn);
   }
 
+  /// Recherche un livre sur l'API SRU de la BNF (Bibliothèque Nationale de France)
+  Future<Book?> _fetchFromBNF(String isbn) async {
+    try {
+      final url = 'https://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&query=bib.isbn%20adj%20%22$isbn%22&recordSchema=dublincore';
+      
+      final response = await http.get(Uri.parse(url)).timeout(_timeout);
+      
+      if (response.statusCode != 200) {
+        _logger.warning('BNF API retourned status code: ${response.statusCode}');
+        return null;
+      }
+      
+      final document = XmlDocument.parse(response.body);
+      
+      // Cherche le nombre de résultats
+      final numberOfRecords = document.findAllElements('srw:numberOfRecords').firstOrNull?.innerText;
+      if (numberOfRecords == null || numberOfRecords == '0') {
+        _logger.info('Aucun résultat trouvé sur la BNF pour ISBN: $isbn');
+        return null;
+      }
+      
+      // Cherche le premier enregistrement
+      final record = document.findAllElements('srw:record').firstOrNull;
+      if (record == null) {
+        return null;
+      }
+      
+      final recordData = record.findAllElements('oai_dc:dc').firstOrNull;
+      if (recordData == null) {
+        return null;
+      }
+      
+      // Extraction des métadonnées Dublin Core
+      final title = recordData.findAllElements('dc:title').firstOrNull?.innerText ?? '';
+      final creators = recordData.findAllElements('dc:creator').map((e) => e.innerText).toList();
+      final author = creators.isNotEmpty ? creators.first : 'Auteur inconnu';
+      final publisher = recordData.findAllElements('dc:publisher').firstOrNull?.innerText;
+      final dateStr = recordData.findAllElements('dc:date').firstOrNull?.innerText;
+      int? publishYear = dateStr != null ? int.tryParse(dateStr) : null;
+      final description = recordData.findAllElements('dc:description').firstOrNull?.innerText;
+      
+      // Extraction des langues
+      final languages = recordData.findAllElements('dc:language').map((e) => e.innerText).toList();
+      
+      _logger.info('Livre trouvé sur BNF: $title par $author');
+      
+      return Book(
+        isbn: isbn,
+        title: title,
+        author: author,
+        description: description,
+        publisher: publisher,
+        publishYear: publishYear,
+        subjects: languages,
+      );
+    } catch (e) {
+      _logger.warning('Erreur BNF API pour ISBN $isbn', e);
+      return null;
+    }
+  }
+
   Future<Book?> _fetchFromBooksApi(String isbn) async {
     try {
       Book? book1 = await _fetchFromGoogleBooks(isbn);
       Book? book2 = await _fetchFromOpenLibrary(isbn);
-      Book book = Book.concat(book1, book2);
+      Book? book3 = await _fetchFromBNF(isbn);
+      
       _logger.info("book1: $book1");
       _logger.info("book2: $book2");
-      _logger.info("book: ${book.toJson()}");
+      _logger.info("book3: $book3");
+      
+      // Concatène les livres de manière sécurisée
+      Book? book;
+      
+      // Première concaténation
+      if (book1 != null || book2 != null) {
+        book = Book.concat(book1, book2);
+      } else {
+        book = null;
+      }
+      
+      // Deuxième concaténation
+      if (book != null || book3 != null) {
+        book = Book.concat(book, book3);
+      }
+      
+      _logger.info("book: ${book?.toJson()}");
       return book;
     } catch (e) {
       _logger.warning('Erreur Books API pour ISBN $isbn', e);

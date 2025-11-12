@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/constants/app_constants.dart';
 import '../core/utils/dynamic_color_scheme.dart';
+import '../core/utils/error_handler.dart';
 import '../widgets/scanner/python_barcode_scanner.dart';
 import '../widgets/svg_logo_widget.dart';
 import '../services/services.dart';
@@ -659,7 +661,15 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
     try {
       final dbHelper = DatabaseHelper();
       return await dbHelper.getGroup(groupId);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      if (mounted) {
+        ErrorHandler.showCaughtError(
+          context,
+          message: 'Erreur lors de la récupération du groupe',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
       return null;
     }
   }
@@ -797,6 +807,33 @@ class _BookInfoScreenState extends State<BookInfoScreen> with SingleTickerProvid
               ],
             ),
           ),
+          
+          // Bouton pour télécharger le code-barres
+          if (book.isbn.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade200),
+                ),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final barcodeService = context.read<BarcodeService>();
+                    await barcodeService.generateAndDownloadBarcode(book.isbn, context);
+                  },
+                  icon: Icon(Icons.qr_code_2),
+                  label: const Text('Télécharger le code-barres'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -26,6 +26,8 @@ class HomeScreen extends StatelessWidget {
                 context.go(AppRoutes.groupManagement);
               } else if (value == 'classes') {
                 context.go(AppRoutes.classManagement);
+              } else if (value == 'logs') {
+                context.push('/logs');
               }
             },
             itemBuilder: (context) => [
@@ -46,6 +48,17 @@ class HomeScreen extends StatelessWidget {
                     Icon(Icons.school, size: 20),
                     SizedBox(width: 12),
                     Text('Gestion des classes'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logs',
+                child: Row(
+                  children: [
+                    Icon(Icons.bug_report, size: 20, color: Colors.orange),
+                    SizedBox(width: 12),
+                    Text('Voir les logs (Debug)'),
                   ],
                 ),
               ),
@@ -152,7 +165,7 @@ class HomeScreen extends StatelessWidget {
           subtitle: 'Enregistrer et placer un livre dans la bibliothèque',
           icon: Icons.add_box,
           color: Theme.of(context).colorScheme.secondary,
-          onTap: () => context.push(AppRoutes.scanToShelve),
+          onTap: () => context.push(AppRoutes.shelveBook),
         ),
         
         ActionCard(

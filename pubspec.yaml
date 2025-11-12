@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  msvcredist:
+    git:
+      url: https://github.com/insertjokehere/flutter_msvcredist.git
+      ref: main
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -73,11 +78,26 @@ dependencies:
   
   # Logger pour le débogage
   logger: ^2.5.0
+  
+  # Parsing XML pour l'API BNF
+  xml: ^6.5.0
+  
+  # Génération de codes-barres
+  barcode: ^2.2.2
+  
+  # Manipulation d'images
+  image: ^4.1.7
+  
+  # Gestion de la fenêtre (Desktop)
+  window_manager: ^0.4.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+  msix:
+    git:
+      url: https://github.com/insertjokehere/msix.git
+      ref: msvc_redist
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your

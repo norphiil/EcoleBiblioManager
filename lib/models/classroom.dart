@@ -1,14 +1,17 @@
 import 'package:flutter/foundation.dart';
+import 'student.dart';
 
 /// Modèle représentant une classe scolaire
 @immutable
 class ClassRoom {
   final String id;
   final String name;
+  final List<Student> students;
 
   const ClassRoom({
     required this.id,
     required this.name,
+    this.students = const [],
   });
 
   /// Constructeur depuis une Map (pour la BDD)
@@ -16,6 +19,7 @@ class ClassRoom {
     return ClassRoom(
       id: map['id'] as String,
       name: map['name'] as String,
+      students: const [],
     );
   }
 
@@ -31,10 +35,12 @@ class ClassRoom {
   ClassRoom copyWith({
     String? id,
     String? name,
+    List<Student>? students,
   }) {
     return ClassRoom(
       id: id ?? this.id,
       name: name ?? this.name,
+      students: students ?? this.students,
     );
   }
 
@@ -48,5 +54,5 @@ class ClassRoom {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'ClassRoom(id: $id, name: $name)';
+  String toString() => 'ClassRoom(id: $id, name: $name, students: ${students.length})';
 }

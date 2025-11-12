@@ -4,3 +4,4 @@ export 'python_backend_service.dart';
 export 'initialization_service.dart';
 export 'database/database_services.dart';
 export 'full_sync_service.dart';
+export 'barcode_service.dart';

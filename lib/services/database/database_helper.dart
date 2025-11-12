@@ -33,7 +33,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -90,6 +90,17 @@ class DatabaseHelper {
       )
     ''');
 
+    // Table des élèves
+    await db.execute('''
+      CREATE TABLE students (
+        id TEXT PRIMARY KEY,
+        firstName TEXT NOT NULL,
+        lastName TEXT NOT NULL,
+        classId TEXT NOT NULL,
+        FOREIGN KEY (classId) REFERENCES classes(id) ON DELETE CASCADE
+      )
+    ''');
+
     // Table de l'historique des emprunts
     await db.execute('''
       CREATE TABLE borrow_history (
@@ -120,6 +131,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_books_syncStatus ON books(syncStatus)');
     await db.execute('CREATE INDEX idx_groups_syncStatus ON book_groups(syncStatus)');
     await db.execute('CREATE INDEX idx_classes_name ON classes(name)');
+    await db.execute('CREATE INDEX idx_students_classId ON students(classId)');
     await db.execute('CREATE INDEX idx_borrow_history_isbn ON borrow_history(isbn)');
     await db.execute('CREATE INDEX idx_borrow_history_borrowedAt ON borrow_history(borrowedAt)');
     await db.execute('CREATE INDEX idx_borrow_history_classId ON borrow_history(classId)');
@@ -238,6 +250,27 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE books ADD COLUMN description TEXT');
       
       print('Migration v4→v5 terminée avec succès');
+    }
+
+    if (oldVersion < 6) {
+      // Migration vers version 6 : Ajouter table students pour gérer les élèves des classes
+      print('Migration de la base de données de v$oldVersion vers v6');
+      
+      // Créer la table students
+      await db.execute('''
+        CREATE TABLE students (
+          id TEXT PRIMARY KEY,
+          firstName TEXT NOT NULL,
+          lastName TEXT NOT NULL,
+          classId TEXT NOT NULL,
+          FOREIGN KEY (classId) REFERENCES classes(id) ON DELETE CASCADE
+        )
+      ''');
+      
+      // Créer l'index
+      await db.execute('CREATE INDEX idx_students_classId ON students(classId)');
+      
+      print('Migration v5→v6 terminée avec succès');
     }
   }
 
@@ -554,11 +587,19 @@ class DatabaseHelper {
 
   // ==================== MÉTHODES POUR LES CLASSES ====================
 
-  /// Récupère toutes les classes (triées par nom)
+  /// Récupère toutes les classes (triées par nom) avec leurs élèves
   Future<List<ClassRoom>> getAllClasses() async {
     final db = await database;
     final maps = await db.query('classes', orderBy: 'name ASC');
-    return maps.map((map) => _classFromMap(map)).toList();
+    
+    List<ClassRoom> classes = [];
+    for (final map in maps) {
+      final classRoom = _classFromMap(map);
+      final students = await getStudentsByClass(classRoom.id);
+      classes.add(classRoom.copyWith(students: students));
+    }
+    
+    return classes;
   }
 
   /// Ajoute une nouvelle classe
@@ -605,6 +646,103 @@ class DatabaseHelper {
     return {
       'id': classRoom.id,
       'name': classRoom.name,
+    };
+  }
+
+  // ==================== ÉLÈVES ====================
+
+  /// Récupère tous les élèves d'une classe
+  Future<List<Student>> getStudentsByClass(String classId) async {
+    final db = await database;
+    final maps = await db.query(
+      'students',
+      where: 'classId = ?',
+      whereArgs: [classId],
+      orderBy: 'lastName ASC, firstName ASC',
+    );
+    return maps.map((map) => _studentFromMap(map)).toList();
+  }
+
+  /// Récupère tous les élèves
+  Future<List<Student>> getAllStudents() async {
+    final db = await database;
+    final maps = await db.query(
+      'students',
+      orderBy: 'lastName ASC, firstName ASC',
+    );
+    return maps.map((map) => _studentFromMap(map)).toList();
+  }
+
+  /// Ajoute un nouvel élève
+  Future<void> addStudent(Student student) async {
+    final db = await database;
+    await db.insert(
+      'students',
+      _studentToMap(student),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Ajoute plusieurs élèves
+  Future<void> addStudents(List<Student> students) async {
+    final db = await database;
+    for (final student in students) {
+      await db.insert(
+        'students',
+        _studentToMap(student),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
+  /// Met à jour un élève
+  Future<void> updateStudent(Student student) async {
+    final db = await database;
+    await db.update(
+      'students',
+      _studentToMap(student),
+      where: 'id = ?',
+      whereArgs: [student.id],
+    );
+  }
+
+  /// Supprime un élève
+  Future<void> deleteStudent(String id) async {
+    final db = await database;
+    await db.delete(
+      'students',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Supprime tous les élèves d'une classe
+  Future<void> deleteStudentsByClass(String classId) async {
+    final db = await database;
+    await db.delete(
+      'students',
+      where: 'classId = ?',
+      whereArgs: [classId],
+    );
+  }
+
+  /// Convertit un Map en Student
+  Student _studentFromMap(Map<String, dynamic> map) {
+    return Student(
+      id: map['id'] as String,
+      firstName: map['firstName'] as String,
+      lastName: map['lastName'] as String,
+      classId: map['classId'] as String,
+    );
+  }
+
+  /// Convertit un Student en Map
+  Map<String, dynamic> _studentToMap(Student student) {
+    return {
+      'id': student.id,
+      'firstName': student.firstName,
+      'lastName': student.lastName,
+      'classId': student.classId,
     };
   }
 

@@ -1,21 +1,51 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/constants/app_constants.dart';
 import 'services/services.dart';
+import 'services/log_service.dart';
 import 'screens/initialization_screen.dart';
 import 'widgets/app_exit_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Initialiser window_manager pour les plateformes desktop
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await windowManager.ensureInitialized();
+    
+    // Configuration de la fenêtre
+    const windowOptions = WindowOptions(
+      minimumSize: Size(800, 600),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.normal,
+    );
+    
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+  
+  // Initialiser le service de logs
+  final logService = LogService();
+  await logService.initialize();
+  await logService.log('=== APPLICATION DEMARREE ===', level: LogLevel.info);
+  
   // Charge les variables d'environnement
   try {
     await dotenv.load(fileName: ".env");
+    await logService.log('Variables d\'environnement chargées');
+    await logService.log('Mode DEBUG: ${AppConstants.isDebugMode}');
   } catch (e) {
     print('Erreur lors du chargement du fichier .env: $e');
+    await logService.logError('Erreur chargement .env', e, null);
   }
   
   runApp(const EBMApp());
@@ -34,6 +64,9 @@ class EBMApp extends StatelessWidget {
         ),
         Provider<BookApiService>(
           create: (_) => BookApiService(),
+        ),
+        Provider<BarcodeService>(
+          create: (_) => BarcodeService(),
         ),
         Provider<GoogleSheetsService>(
           create: (_) => GoogleSheetsService(),

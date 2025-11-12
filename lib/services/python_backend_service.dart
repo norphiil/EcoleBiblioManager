@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'log_service.dart';
 
 /// Service pour gérer le backend Python
 /// Lance automatiquement le serveur FastAPI et gère la communication
@@ -17,6 +18,13 @@ class PythonBackendService {
   
   // Callback pour les mises à jour de progression
   Function(String)? _progressCallback;
+  
+  // Capture des erreurs de démarrage
+  final List<String> _startupErrors = [];
+  String? _lastError;
+  
+  // Service de logs
+  final LogService _logService = LogService();
 
   /// Singleton
   static final PythonBackendService _instance = PythonBackendService._internal();
@@ -26,33 +34,49 @@ class PythonBackendService {
   /// État du serveur
   bool get isRunning => _isRunning;
   bool get isStarting => _isStarting;
+  
+  /// Erreurs de démarrage capturées
+  String? get lastError => _lastError;
+  List<String> get startupErrors => List.unmodifiable(_startupErrors);
 
   /// Démarre le serveur Python s'il n'est pas déjà en cours d'exécution
   Future<bool> startServer({Function(String)? onProgress}) async {
+    await _logService.logOperation('Démarrage serveur Python');
+    
     if (_isRunning || _isStarting) {
       debugPrint('[PythonBackend] 🔄 Serveur déjà en cours...');
+      await _logService.log('Serveur déjà en cours d\'exécution', level: LogLevel.warning);
       return _isRunning;
     }
     
     _progressCallback = onProgress;
+    _startupErrors.clear(); // Réinitialiser les erreurs
+    _lastError = null;
 
     _isStarting = true;
     debugPrint('[PythonBackend] 🚀 Démarrage du serveur Python...');
+    await _logService.log('Début du démarrage du serveur Python');
 
     try {
       // Vérifier d'abord si le serveur n'est pas déjà lancé
+      await _logService.log('Vérification si serveur déjà actif...');
       if (await _checkServerHealth()) {
         debugPrint('[PythonBackend] ✅ Serveur déjà actif');
+        await _logService.log('Serveur déjà actif sur http://127.0.0.1:8000');
         _isRunning = true;
         _isStarting = false;
+        await _logService.logOperationEnd('Démarrage serveur Python', success: true);
         return true;
       }
 
       // Obtenir le chemin du backend
+      await _logService.log('Recherche du dossier python_backend...');
       final backendPath = await _getBackendPath();
       if (backendPath == null) {
+        await _logService.log('ERREUR: Dossier python_backend introuvable', level: LogLevel.error);
         throw Exception('Impossible de trouver le dossier python_backend');
       }
+      await _logService.log('Dossier backend trouvé: $backendPath');
 
       // Vérifier si l'environnement virtuel et les dépendances sont installés
       final needsInstallation = await _checkInstallationNeeded(backendPath);
@@ -80,10 +104,14 @@ class PythonBackendService {
       
       return isReady;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('[PythonBackend] ❌ Erreur lors du démarrage: $e');
+      await _logService.logError('Erreur critique lors du démarrage du serveur', e, stackTrace);
+      _lastError = e.toString();
+      _startupErrors.add('Erreur démarrage: $e');
       _isRunning = false;
       _isStarting = false;
+      await _logService.logOperationEnd('Démarrage serveur Python', success: false);
       return false;
     }
   }
@@ -147,8 +175,23 @@ class PythonBackendService {
 
   /// Trouve le chemin du dossier python_backend
   Future<String?> _getBackendPath() async {
+    // Obtenir le chemin de l'exécutable (pour les builds compilés)
+    final executablePath = Platform.resolvedExecutable;
+    final executableDir = path.dirname(executablePath);
+    
+    await _logService.log('Exécutable: $executablePath');
+    await _logService.log('Dossier exécutable: $executableDir');
+    await _logService.log('Current directory: ${Directory.current.path}');
+    
     // Essayer plusieurs chemins possibles
     final possiblePaths = [
+      // Chemins relatifs à l'exécutable (pour builds compilés)
+      path.join(executableDir, 'python_backend'),
+      path.join(executableDir, '..', 'python_backend'),
+      path.join(executableDir, '..', '..', 'python_backend'),
+      path.join(executableDir, 'data', 'python_backend'),
+      
+      // Chemins relatifs au répertoire courant (pour développement)
       'python_backend',
       '../python_backend',
       '../../python_backend',
@@ -157,21 +200,34 @@ class PythonBackendService {
     ];
 
     for (final possiblePath in possiblePaths) {
+      await _logService.log('Tentative: $possiblePath');
       final dir = Directory(possiblePath);
       if (await dir.exists()) {
         final mainFile = File(path.join(possiblePath, 'main.py'));
         if (await mainFile.exists()) {
-          return path.absolute(possiblePath);
+          final absolutePath = path.absolute(possiblePath);
+          await _logService.log('✓ Backend trouvé: $absolutePath');
+          return absolutePath;
+        } else {
+          await _logService.log('  Dossier existe mais main.py absent');
         }
       }
     }
 
+    await _logService.log('❌ Aucun chemin valide trouvé', level: LogLevel.error);
     return null;
   }
 
   /// Vérifie si l'installation des dépendances est nécessaire
   Future<bool> _checkInstallationNeeded(String backendPath) async {
     try {
+      // Si un exécutable autonome est disponible, aucune installation n'est nécessaire
+      final exePath = await _getBundledExecutable(backendPath);
+      if (exePath != null) {
+        debugPrint('[PythonBackend] 🧰 Exécutable autonome détecté: ${path.basename(exePath)}');
+        return false;
+      }
+
       // Vérifier si le dossier venv existe
       final venvPath = path.join(backendPath, 'venv');
       if (!await Directory(venvPath).exists()) {
@@ -216,6 +272,23 @@ class PythonBackendService {
       debugPrint('[PythonBackend] 🔍 Erreur vérification: $e - Installation requise');
       return true;
     }
+  }
+
+  /// Recherche un exécutable packagé du backend (PyInstaller)
+  Future<String?> _getBundledExecutable(String backendPath) async {
+    final candidates = <String>[
+      path.join(backendPath, 'dist', 'ebm_backend.exe'),
+      path.join(backendPath, 'ebm_backend.exe'),
+      path.join(backendPath, 'dist', 'backend.exe'),
+      path.join(backendPath, 'backend.exe'),
+    ];
+
+    for (final exe in candidates) {
+      if (await File(exe).exists()) {
+        return exe;
+      }
+    }
+    return null;
   }
 
   /// Installe les dépendances Python de manière automatique
@@ -330,6 +403,42 @@ class PythonBackendService {
     debugPrint('[PythonBackend] 🚀 Lancement du serveur FastAPI...');
     
     try {
+      // 1) Préférence: exécutable packagé si présent (pas besoin de Python système)
+      final bundledExe = await _getBundledExecutable(backendPath);
+      if (bundledExe != null) {
+        debugPrint('[PythonBackend] 🧰 Démarrage de l\'exécutable packagé: ${path.basename(bundledExe)}');
+        _serverProcess = await Process.start(
+          bundledExe,
+          const <String>[],
+          workingDirectory: path.dirname(bundledExe),
+          runInShell: true,
+        );
+
+        _serverProcess!.stdout.transform(const Utf8Decoder(allowMalformed: true)).listen((data) {
+          data.split('\n').where((line) => line.trim().isNotEmpty).forEach((line) {
+            final cleanLine = _cleanLogLine(line);
+            debugPrint('[PythonServer] $cleanLine');
+            _logService.log('[Python exe stdout] $cleanLine');
+          });
+        });
+        _serverProcess!.stderr.transform(const Utf8Decoder(allowMalformed: true)).listen((data) {
+          data.split('\n').where((line) => line.trim().isNotEmpty).forEach((line) {
+            final cleanLine = _cleanLogLine(line);
+            debugPrint('[PythonServer ERROR] $cleanLine');
+            // Capturer les erreurs pour le DEBUG
+            _startupErrors.add(cleanLine);
+            _lastError = cleanLine;
+            _logService.log('[Python exe stderr] $cleanLine', level: LogLevel.error);
+          });
+        });
+        _serverProcess!.exitCode.then((exitCode) {
+          if (exitCode != 0) {
+            debugPrint('[PythonBackend] ❌ Processus exécutable terminé avec code: $exitCode');
+          }
+        });
+        return;
+      }
+
       // Utiliser directement l'exécutable Python du venv
       final pythonExe = path.join(backendPath, 'venv', 'Scripts', 'python.exe');
       
@@ -365,6 +474,8 @@ class PythonBackendService {
           // Nettoyer les caractères problématiques des logs
           final cleanLine = _cleanLogLine(line);
           debugPrint('[PythonServer] $cleanLine');
+          // Logger dans le fichier
+          _logService.log('[Python stdout] $cleanLine');
         });
       });
       
@@ -372,6 +483,11 @@ class PythonBackendService {
         data.split('\n').where((line) => line.trim().isNotEmpty).forEach((line) {
           final cleanLine = _cleanLogLine(line);
           debugPrint('[PythonServer ERROR] $cleanLine');
+          // Capturer les erreurs pour le DEBUG
+          _startupErrors.add(cleanLine);
+          _lastError = cleanLine;
+          // Logger dans le fichier
+          _logService.log('[Python stderr] $cleanLine', level: LogLevel.error);
         });
       });
       

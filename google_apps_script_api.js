@@ -22,6 +22,7 @@ const SHEETS = {
   BOOKS: 'Livres',
   GROUPS: 'Groupes',
   CLASSES: 'Classes',
+  STUDENTS: 'Élèves',
   BORROW_HISTORY: 'Historique'
 };
 
@@ -138,6 +139,11 @@ function initializeAllSheets() {
   // Initialise la feuille des classes
   results.classes = initializeSheet(spreadsheet, SHEETS.CLASSES, [
     'id', 'name'
+  ]);
+  
+  // Initialise la feuille des élèves
+  results.students = initializeSheet(spreadsheet, SHEETS.STUDENTS, [
+    'id', 'firstName', 'lastName', 'classId'
   ]);
   
   // Initialise la feuille de l'historique des emprunts

@@ -18,6 +18,7 @@ class InitializationService extends ChangeNotifier {
   String _currentStep = '';
   String? _errorMessage;
   double _progress = 0.0;
+  bool _offlineMode = false;
   
   InitializationService(this._googleSheetsService, this._databaseHelper) {
     _syncService = SyncService(_databaseHelper, _googleSheetsService);
@@ -37,6 +38,7 @@ class InitializationService extends ChangeNotifier {
   double get progress => _progress;
   bool get isCompleted => _status == InitializationStatus.completed;
   bool get hasError => _status == InitializationStatus.error;
+  bool get isOfflineMode => _offlineMode;
   
   /// Lance l'initialisation complète de l'application
   Future<void> initialize() async {
@@ -48,24 +50,40 @@ class InitializationService extends ChangeNotifier {
       await _databaseHelper.database; // Force l'initialisation
       _updateProgress('Base de données locale prête', 0.2);
       
-      // Étape 2: Initialisation du service Google Sheets
-      _updateProgress('Connexion à Google Sheets...', 0.3);
-      await _googleSheetsService.initialize();
-      _updateProgress('Connexion établie', 0.4);
+      // Étape 2: Initialisation du service Google Sheets (si non hors-ligne)
+      if (!_offlineMode) {
+        _updateProgress('Connexion à Google Sheets...', 0.3);
+        await _googleSheetsService.initialize();
+        _updateProgress('Connexion établie', 0.4);
+      } else {
+        _updateProgress('Mode hors-ligne activé - Google Sheets ignoré', 0.4);
+      }
       
-      // Étape 3: Création des feuilles si nécessaire
-      _updateProgress('Initialisation des feuilles Google Sheets...', 0.5);
-      await _googleSheetsService.initializeSheets();
-      _updateProgress('Feuilles Google Sheets prêtes', 0.6);
+      // Étape 3: Création des feuilles si nécessaire (si non hors-ligne)
+      if (!_offlineMode) {
+        _updateProgress('Initialisation des feuilles Google Sheets...', 0.5);
+        await _googleSheetsService.initializeSheets();
+        _updateProgress('Feuilles Google Sheets prêtes', 0.6);
+      } else {
+        _updateProgress('Initialisation des services locaux...', 0.6);
+      }
       
       // Étape 4: Synchronisation initiale (import depuis Google Sheets)
-      _updateProgress('Synchronisation des données...', 0.7);
-      await _syncService.initialSync();
-      _updateProgress('Données synchronisées', 0.9);
+      if (!_offlineMode) {
+        _updateProgress('Synchronisation des données...', 0.7);
+        await _syncService.initialSync();
+        _updateProgress('Données synchronisées', 0.9);
+      } else {
+        _updateProgress('Mode hors-ligne: utilisation des données locales', 0.9);
+      }
       
-      // Étape 5: Démarrage de la synchronisation périodique en arrière-plan
-      _updateProgress('Démarrage de la synchronisation automatique...', 0.95);
-      _syncService.startPeriodicSync(interval: const Duration(minutes: 5));
+      // Étape 5: Démarrage de la synchronisation périodique en arrière-plan (si non hors-ligne)
+      if (!_offlineMode) {
+        _updateProgress('Démarrage de la synchronisation automatique...', 0.95);
+        _syncService.startPeriodicSync(interval: const Duration(minutes: 5));
+      } else {
+        _updateProgress('Synchronisation désactivée (hors-ligne)', 0.95);
+      }
       
       // Étape 6: Finalisation
       await _finalize();
@@ -112,6 +130,22 @@ class InitializationService extends ChangeNotifier {
       _errorMessage = null;
       await initialize();
     }
+  }
+
+  /// Active le mode hors-ligne et termine l'initialisation avec les données locales
+  Future<void> goOffline() async {
+    // Marquer le mode hors-ligne et arrêter toute sync si démarrée
+    _offlineMode = true;
+    try {
+      _syncService.stopPeriodicSync();
+    } catch (_) {}
+
+    _updateStatus(InitializationStatus.inProgress, 'Activation du mode hors-ligne...', _progress);
+
+    // Initialiser uniquement la base locale (déjà faite au début d'initialize)
+    // Terminer directement l'initialisation sans Google Sheets
+    await _finalize();
+    _updateStatus(InitializationStatus.completed, 'Mode hors-ligne actif', 1.0);
   }
 }
 

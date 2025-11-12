@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../services/python_backend_service.dart';
+import '../../core/utils/error_handler.dart';
 
 /// CustomPainter pour dessiner le cadre de scan professionnel
 class ScanFramePainter extends CustomPainter {
@@ -140,13 +141,35 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
 
   @override
   void dispose() {
+    // Arrêter immédiatement la capture
     _captureTimer?.cancel();
+    _captureTimer = null;
+    
+    // Disposer les animations
     _scanAnimationController.dispose();
     _pulseAnimationController.dispose();
-    _controller?.dispose();
-    _backendService.dispose();
+    
+    // Disposer la caméra de manière sécurisée
+    if (_controller != null) {
+      try {
+        _controller?.dispose();
+      } catch (e) {
+        debugPrint('Erreur dispose caméra: $e');
+      }
+      _controller = null;
+    }
+    
+    // Disposer le backend Python
+    try {
+      _backendService.dispose();
+    } catch (e) {
+      debugPrint('Erreur dispose backend: $e');
+    }
+    
+    // Disposer les contrôleurs de texte et focus
     _manualIsbnController.dispose();
     _manualIsbnFocusNode.dispose();
+    
     super.dispose();
   }
 
@@ -171,6 +194,53 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         setState(() {
           _statusMessage = 'Erreur: IA indisponible';
         });
+        
+        // Récupérer les erreurs capturées du backend
+        final lastError = _backendService.lastError;
+        final errorLogs = _backendService.startupErrors;
+        
+        // Construire un message détaillé
+        final details = StringBuffer();
+        details.writeln('Le backend Python n\'a pas pu démarrer.');
+        details.writeln('');
+        
+        if (lastError != null) {
+          details.writeln('Dernière erreur:');
+          details.writeln(lastError);
+          details.writeln('');
+        }
+        
+        if (errorLogs.isNotEmpty) {
+          details.writeln('Logs d\'erreur (${errorLogs.length} entrées):');
+          // Limiter à 10 dernières erreurs pour éviter trop de texte
+          final recentErrors = errorLogs.length > 10 
+              ? errorLogs.sublist(errorLogs.length - 10) 
+              : errorLogs;
+          for (final error in recentErrors) {
+            details.writeln('  • $error');
+          }
+        } else {
+          details.writeln('Vérifications suggérées:');
+          details.writeln('  • Python est installé');
+          details.writeln('  • Les dépendances sont installées');
+          details.writeln('  • Le port 8000 est disponible');
+        }
+        
+        details.writeln('');
+        details.writeln('💡 Astuce: Pour voir les logs complets, allez dans');
+        details.writeln('   Paramètres → Voir les logs (Debug)');
+        
+        // Afficher l'erreur même si pas mounted (après le frame actuel)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ErrorHandler.showError(
+              context,
+              message: 'Erreur: IA indisponible',
+              details: details.toString(),
+            );
+          }
+        });
+        
         widget.onError?.call();
         return;
       }
@@ -196,10 +266,18 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         _statusMessage = 'Scanner prêt ✓';
       });
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       setState(() {
         _statusMessage = 'Erreur: $e';
       });
+      if (mounted) {
+        ErrorHandler.showCaughtError(
+          context,
+          message: 'Erreur lors de l\'initialisation du scanner',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
       widget.onError?.call();
     }
   }
@@ -207,6 +285,19 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   /// Initialise la caméra avec gestion des erreurs de threading Windows
   Future<void> _initializeCamera() async {
     try {
+      // S'assurer que l'ancienne caméra est bien disposée avant d'en créer une nouvelle
+      if (_controller != null) {
+        try {
+          await _controller!.dispose();
+        } catch (e) {
+          debugPrint('Nettoyage caméra précédente: $e');
+        }
+        _controller = null;
+      }
+      
+      // Petit délai pour s'assurer que les ressources sont libérées
+      await Future.delayed(const Duration(milliseconds: 100));
+      
       _controller = CameraController(
         _cameras[_selectedCameraIndex],
         ResolutionPreset.high,
@@ -221,7 +312,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
       if (!_controller!.value.isInitialized) {
         throw CameraException('camera_init_failed', 'La caméra n\'a pas pu être initialisée');
       }
-    } on CameraException catch (e) {
+    } on CameraException catch (e, stackTrace) {
       // Gérer spécifiquement les erreurs de caméra
       debugPrint('⚠️ Erreur caméra (ignorée si threading): ${e.code} - ${e.description}');
       
@@ -231,10 +322,27 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         return;
       }
       
+      // Afficher l'erreur si mode DEBUG
+      if (mounted) {
+        ErrorHandler.showCaughtError(
+          context,
+          message: 'Erreur d\'initialisation de la caméra',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
       // Sinon, propager l'erreur
       rethrow;
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('❌ Erreur initialisation caméra: $e');
+      if (mounted) {
+        ErrorHandler.showCaughtError(
+          context,
+          message: 'Erreur initialisation caméra',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
       rethrow;
     }
   }
@@ -467,12 +575,20 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         _isReady = true; // Marquer comme prêt
         _statusMessage = 'Caméra changée ✓';
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
       setState(() {
         _isSwitchingCamera = false;
         _isReady = false;
         _statusMessage = 'Erreur changement caméra: $e';
       });
+      if (mounted) {
+        ErrorHandler.showCaughtError(
+          context,
+          message: 'Erreur changement caméra',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
     }
   }
 

@@ -89,6 +89,26 @@ class DataConverter {
     };
   }
 
+  // === STUDENT ===
+  
+  static Student toStudent(Map<String, dynamic> row) {
+    return Student(
+      id: row['id']?.toString() ?? '',
+      firstName: row['firstName']?.toString() ?? '',
+      lastName: row['lastName']?.toString() ?? '',
+      classId: row['classId']?.toString() ?? '',
+    );
+  }
+
+  static Map<String, dynamic> fromStudent(Student student) {
+    return {
+      'id': student.id,
+      'firstName': student.firstName,
+      'lastName': student.lastName,
+      'classId': student.classId,
+    };
+  }
+
   // === BORROW HISTORY ===
   
   static BorrowHistory toBorrowHistory(Map<String, dynamic> row) {

@@ -8,6 +8,7 @@ import '../../screens/book_info_screen.dart';
 import '../../screens/shelve_book_screen.dart';
 import '../../screens/groups_management_screen.dart';
 import '../../screens/class_management_screen.dart';
+import '../../screens/log_viewer_screen.dart';
 import '../../models/book.dart';
 import '../constants/app_constants.dart';
 
@@ -86,6 +87,13 @@ class AppRouter {
         path: AppRoutes.classManagement,
         name: 'class-management',
         builder: (context, state) => const ClassManagementScreen(),
+      ),
+
+      // Visualiseur de logs (Debug)
+      GoRoute(
+        path: '/logs',
+        name: 'logs',
+        builder: (context, state) => const LogViewerScreen(),
       ),
     ],
     

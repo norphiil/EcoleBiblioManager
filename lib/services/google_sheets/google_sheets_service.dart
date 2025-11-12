@@ -4,6 +4,7 @@ import 'api_client.dart';
 import 'books_operations.dart';
 import 'groups_operations.dart';
 import 'classes_operations.dart';
+import 'students_operations.dart';
 import 'borrow_history_operations.dart';
 
 /// Service principal Google Sheets
@@ -12,6 +13,7 @@ class GoogleSheetsService {
   BooksOperations? books;
   GroupsOperations? groups;
   ClassesOperations? classes;
+  StudentsOperations? students;
   BorrowHistoryOperations? borrowHistory;
   bool _initialized = false;
 
@@ -27,12 +29,14 @@ class GoogleSheetsService {
     final booksSheet = dotenv.env['BOOKS_SHEET_NAME'] ?? 'Livres';
     final groupsSheet = dotenv.env['GROUPS_SHEET_NAME'] ?? 'Groupes';
     final classesSheet = dotenv.env['CLASSES_SHEET_NAME'] ?? 'Classes';
+    final studentsSheet = dotenv.env['STUDENTS_SHEET_NAME'] ?? 'Élèves';
     final borrowHistorySheet = dotenv.env['BORROW_HISTORY_SHEET_NAME'] ?? 'Historique';
 
     _client = GoogleSheetsApiClient(scriptUrl);
     books = BooksOperations(_client!, booksSheet);
     groups = GroupsOperations(_client!, groupsSheet);
     classes = ClassesOperations(_client!, classesSheet);
+    students = StudentsOperations(_client!, studentsSheet);
     borrowHistory = BorrowHistoryOperations(_client!, borrowHistorySheet);
 
     // Test de connexion
@@ -69,6 +73,16 @@ class GoogleSheetsService {
   Future<ClassRoom> updateClass(ClassRoom classRoom) => classes!.update(classRoom);
   Future<void> deleteClass(String id) => classes!.delete(id);
   Future<List<ClassRoom>> searchClasses(String field, String value) => classes!.search(field, value);
+
+  // === ÉLÈVES ===
+
+  Future<List<Student>> getAllStudents() => students!.getAll();
+  Future<List<Student>> getStudentsByClass(String classId) => students!.getByClassId(classId);
+  Future<Student> addStudent(Student student) => students!.add(student);
+  Future<void> addStudents(List<Student> students) => this.students!.addMultiple(students);
+  Future<Student> updateStudent(Student student) => students!.update(student);
+  Future<void> deleteStudent(String id) => students!.delete(id);
+  Future<List<Student>> searchStudents(String field, String value) => students!.search(field, value);
 
   // === HISTORIQUE DES EMPRUNTS ===
 

@@ -27,13 +27,19 @@ class FullSyncService {
       result.classesSynced = classesResult.success;
       result.classesErrors = classesResult.errors;
       
-      // 3. Synchroniser les livres
+      // 3. Synchroniser les élèves
+      onProgress?.call('Synchronisation des élèves...');
+      final studentsResult = await _syncStudents();
+      result.studentsSynced = studentsResult.success;
+      result.studentsErrors = studentsResult.errors;
+      
+      // 4. Synchroniser les livres
       onProgress?.call('Synchronisation des livres...');
       final booksResult = await _syncBooks();
       result.booksSynced = booksResult.success;
       result.booksErrors = booksResult.errors;
       
-      // 4. Synchroniser l'historique des emprunts
+      // 5. Synchroniser l'historique des emprunts
       onProgress?.call('Synchronisation de l\'historique...');
       final historyResult = await _syncBorrowHistory();
       result.historySynced = historyResult.success;
@@ -109,6 +115,38 @@ class FullSyncService {
       }
     } catch (e) {
       result.errors.add('Erreur globale classes: $e');
+    }
+    
+    return result;
+  }
+
+  /// Synchronise les élèves
+  Future<_SyncItemResult> _syncStudents() async {
+    final result = _SyncItemResult();
+    
+    try {
+      final localStudents = await _dbHelper.getAllStudents();
+      
+      for (final student in localStudents) {
+        try {
+          // Vérifier si existe dans Sheets
+          final sheetsStudents = await _sheetsService.searchStudents('id', student.id);
+          
+          if (sheetsStudents.isEmpty) {
+            // Ajouter
+            await _sheetsService.addStudent(student);
+            result.success++;
+          } else {
+            // Mettre à jour
+            await _sheetsService.updateStudent(student);
+            result.success++;
+          }
+        } catch (e) {
+          result.errors.add('Élève ${student.fullName}: $e');
+        }
+      }
+    } catch (e) {
+      result.errors.add('Erreur globale élèves: $e');
     }
     
     return result;
@@ -196,11 +234,14 @@ class SyncResult {
   int classesSynced = 0;
   List<String> classesErrors = [];
   
+  int studentsSynced = 0;
+  List<String> studentsErrors = [];
+  
   int historySynced = 0;
   List<String> historyErrors = [];
   
-  int get totalSynced => booksSynced + groupsSynced + classesSynced + historySynced;
-  int get totalErrors => booksErrors.length + groupsErrors.length + classesErrors.length + historyErrors.length;
+  int get totalSynced => booksSynced + groupsSynced + classesSynced + studentsSynced + historySynced;
+  int get totalErrors => booksErrors.length + groupsErrors.length + classesErrors.length + studentsErrors.length + historyErrors.length;
   
   bool get hasErrors => totalErrors > 0 || generalError != null;
 }

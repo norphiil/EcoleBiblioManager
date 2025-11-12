@@ -34,6 +34,7 @@ L'application Flutter gère automatiquement :
 ## 📡 API Endpoints
 
 ### `/` - Informations générales
+
 ```json
 {
   "message": "EBM Barcode Detection API",
@@ -43,6 +44,7 @@ L'application Flutter gère automatiquement :
 ```
 
 ### `/health` - État du serveur
+
 ```json
 {
   "status": "healthy",
@@ -52,7 +54,9 @@ L'application Flutter gère automatiquement :
 ```
 
 ### `/detect` - Détection codes-barres (fichier)
+
 **POST** avec fichier image
+
 ```json
 {
   "success": true,
@@ -69,7 +73,9 @@ L'application Flutter gère automatiquement :
 ```
 
 ### `/detect_base64` - Détection codes-barres (base64)
+
 **POST** avec image en base64
+
 ```json
 {
   "image": "iVBORw0KGgoAAAANSUhEUgAA..."
@@ -109,6 +115,7 @@ Le backend utilise plusieurs techniques pour améliorer la détection :
 ## 🛠️ Développement
 
 ### Lancement manuel du serveur
+
 ```bash
 cd python_backend
 python -m venv venv
@@ -118,6 +125,7 @@ python main.py
 ```
 
 ### Tester l'API
+
 ```bash
 # Vérifier l'état
 curl http://127.0.0.1:8000/health
@@ -126,13 +134,67 @@ curl http://127.0.0.1:8000/health
 http://127.0.0.1:8000/docs
 ```
 
-## 🐛 Dépannage
+## 📦 Distribution sans Python (Windows)
+
+Pour que les utilisateurs n'aient pas besoin d'installer Python, vous pouvez créer un exécutable autonome du backend:
+
+### 1. Prérequis (machine de build)
+
+- Python 3.8+ installé
+- C'est tout ! Le reste est géré automatiquement 🚀
+
+### 2. Build de l'exécutable (automatique)
+
+**Un seul script à lancer** :
+
+- Double-cliquez `python_backend/build_backend_exe.bat`
+- ou exécutez-le dans un terminal
+
+Le script gère **tout automatiquement** :
+1. ✅ Création d'un environnement virtuel de build
+2. ✅ Installation des dépendances Python
+3. ✅ **Vérification des DLLs pyzbar** (libiconv.dll, libzbar.dll)
+4. ✅ **Téléchargement automatique** des DLLs si manquantes
+5. ✅ Installation de PyInstaller 6.3.0
+6. ✅ Utilisation de `ebm_backend.spec` (configuration personnalisée)
+7. ✅ Génération de l'exécutable dans `dist/ebm_backend.exe`
+
+**Plus besoin d'exécuter plusieurs scripts** ! 🎉
+
+### 3. Intégration dans l'app
+
+Le binaire sera généré ici : `python_backend/dist/ebm_backend.exe`
+
+Lors de l'exécution de l'app Flutter, si ce fichier est présent, il sera utilisé en priorité, et l'utilisateur n'aura pas besoin de Python.
+
+### ⚠️ Problème connu : DLLs pyzbar manquantes
+
+**Erreur** : `Failed to load dynlib/dll 'libiconv.dll'`
+
+**Cause** : PyInstaller n'a pas trouvé les DLLs natives de pyzbar
+
+**Solution** :
+1. Vérifiez avec `python check_pyzbar_dlls.py`
+2. Si manquantes, téléchargez les DLLs depuis : https://github.com/NaturalHistoryMuseum/pyzbar#installation
+3. Placez-les dans le dossier `site-packages/pyzbar/` de votre environnement Python
+4. Relancez le build
+
+**Alternative** : Utilisez le mode venv Python classique (sans exécutable packagé)
+
+### Notes
+
+- Le build nécessite Python et PyInstaller uniquement sur la machine qui prépare le binaire.
+- L'exécutable inclut l'interpréteur et les dépendances (FastAPI, OpenCV, etc.) + DLLs natives.
+- Taille attendue : ~150-200 MB (inclut OpenCV et toutes les bibliothèques natives)
+- Assurez-vous d'inclure `python_backend/dist/ebm_backend.exe` dans votre package/distribution (par exemple MSIX sur Windows).
+
+## �🐛 Dépannage
 
 **Problème** : "ModuleNotFoundError: No module named 'fastapi'"
 **Solution** : L'installation automatique se chargera d'installer les dépendances
 
 **Problème** : "Python not found"
-**Solution** : Installer Python 3.8+ depuis https://www.python.org/
+**Solution** : Installer Python 3.8+ depuis <https://www.python.org/>
 
 **Problème** : Timeout lors du démarrage
 **Solution** : Première installation peut prendre 1-2 minutes selon la connexion

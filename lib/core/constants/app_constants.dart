@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Constantes de l'application
 class AppConstants {
+  /// Mode debug global (contrôlé par .env)
+  static bool get isDebugMode => (dotenv.env['DEBUG'] ?? '').toLowerCase() == 'true';
   // Couleurs principales
   static const Color primaryBlue = Color(0xFF2196F3);
   static const Color primaryGreen = Color(0xFF4CAF50);

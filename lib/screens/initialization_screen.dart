@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/app_constants.dart';
+import '../core/utils/error_handler.dart';
 import '../services/initialization_service.dart';
 
 /// Écran d'initialisation de l'application
@@ -170,8 +171,27 @@ class _InitializationScreenState extends State<InitializationScreen>
                           
                           const SizedBox(height: AppConstants.paddingLarge),
                           
-                          // Bouton d'action (en cas d'erreur)
-                          if (initService.hasError) _buildRetryButton(initService),
+                          // Boutons d'action (en cas d'erreur)
+                          if (initService.hasError) ...[
+                            _buildActionButtons(initService),
+                            const SizedBox(height: 20),
+                            // Afficher popup d'erreur détaillée si DEBUG activé
+                            if (AppConstants.isDebugMode)
+                              Builder(
+                                builder: (context) {
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (initService.errorMessage != null) {
+                                      ErrorHandler.showError(
+                                        context,
+                                        message: 'Erreur d\'initialisation',
+                                        details: initService.errorMessage!,
+                                      );
+                                    }
+                                  });
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                          ],
                         ],
                       ),
                     ),
@@ -450,7 +470,7 @@ class _InitializationScreenState extends State<InitializationScreen>
     );
   }
 
-  Widget _buildRetryButton(InitializationService initService) {
+  Widget _buildActionButtons(InitializationService initService) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -508,6 +528,53 @@ class _InitializationScreenState extends State<InitializationScreen>
         
         const SizedBox(width: 16),
         
+        // Bouton Mode hors-ligne
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: Colors.white.withValues(alpha: 0.12),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.25),
+              width: 1.5,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => initService.goOffline(),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(
+                      Icons.wifi_off_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Mode hors-ligne',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 16),
+
         // Bouton Aide
         Container(
           decoration: BoxDecoration(
@@ -559,33 +626,14 @@ class _InitializationScreenState extends State<InitializationScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Configuration Google Sheets'),
+        title: const Text('Demander a l\'administrateur'),
         content: const SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Pour résoudre les erreurs de permissions :',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 16),
-              Text('1. Aller sur console.cloud.google.com'),
-              Text('2. Créer ou sélectionner un projet'),
-              Text('3. Activer l\'API "Google Sheets API"'),
-              Text('4. Créer une clé API'),
-              SizedBox(height: 16),
-              Text('5. Dans votre Google Sheets :'),
-              Text('   • Cliquer sur "Partager"'),
-              Text('   • Sélectionner "Toute personne ayant le lien peut modifier"'),
-              SizedBox(height: 16),
-              Text('6. Vérifier le fichier .env avec :'),
-              Text('   • GOOGLE_SHEET_API=votre_clé_api'),
-              Text('   • SPREADSHEET_ID=id_de_votre_feuille'),
-              SizedBox(height: 16),
-              Text(
-                'Consultez le fichier .env.example pour plus de détails.',
-                style: TextStyle(fontStyle: FontStyle.italic),
+                'Si vous rencontrez des problèmes lors de l\'initialisation, veuillez contacter l\'administrateur de l\'application pour obtenir de l\'aide.',
               ),
             ],
           ),

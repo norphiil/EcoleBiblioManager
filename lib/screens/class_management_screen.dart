@@ -189,69 +189,230 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
   Future<void> _showCreateClassDialog() async {
     final TextEditingController nameController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    final List<Student> newStudents = [];
 
     final result = await showDialog<bool>(
       context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Créer une classe'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom de la classe *',
+                    hintText: 'Ex: 6ème A, CM2, Seconde B...',
+                    border: OutlineInputBorder(),
+                  ),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Le nom est obligatoire';
+                    }
+                    if (_classes.any((c) => c.name.toLowerCase() == value.trim().toLowerCase())) {
+                      return 'Une classe avec ce nom existe déjà';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Élèves',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        _showAddStudentDialog(newStudents, (updatedStudents) {
+                          setState(() {
+                            // Les élèves sont mis à jour directement dans la liste
+                          });
+                        });
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Ajouter'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (newStudents.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Aucun élève ajouté',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: newStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = newStudents[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          child: ListTile(
+                            dense: true,
+                            title: Text('${student.firstName} ${student.lastName}'),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                setState(() {
+                                  newStudents.removeAt(index);
+                                });
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+              child: const Text('Créer'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && nameController.text.trim().isNotEmpty) {
+      await _createClass(nameController.text.trim(), newStudents);
+    }
+  }
+
+  void _showAddStudentDialog(List<Student> students, Function(List<Student>) onUpdate) {
+    final firstNameController = TextEditingController();
+    final lastNameController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Créer une classe'),
+        title: const Text('Ajouter un élève'),
         content: Form(
           key: formKey,
-          child: TextFormField(
-            controller: nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nom de la classe *',
-              hintText: 'Ex: 6ème A, CM2, Seconde B...',
-              border: OutlineInputBorder(),
-            ),
-            autofocus: true,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Le nom est obligatoire';
-              }
-              // Vérifier si une classe avec ce nom existe déjà
-              if (_classes.any((c) => c.name.toLowerCase() == value.trim().toLowerCase())) {
-                return 'Une classe avec ce nom existe déjà';
-              }
-              return null;
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: firstNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Prénom *',
+                  hintText: 'Ex: Jean',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Le prénom est obligatoire';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: lastNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nom *',
+                  hintText: 'Ex: Dupont',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Le nom est obligatoire';
+                  }
+                  return null;
+                },
+              ),
+            ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('Annuler'),
           ),
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.of(context).pop(true);
+                final newStudent = Student(
+                  id: '${DateTime.now().millisecondsSinceEpoch}-${firstNameController.text.hashCode}',
+                  firstName: firstNameController.text.trim(),
+                  lastName: lastNameController.text.trim(),
+                  classId: '', // Sera défini à la création de la classe
+                );
+                students.add(newStudent);
+                onUpdate(students);
+                Navigator.of(context).pop();
               }
             },
-            child: const Text('Créer'),
+            child: const Text('Ajouter'),
           ),
         ],
       ),
     );
-
-    if (result == true && nameController.text.trim().isNotEmpty) {
-      await _createClass(nameController.text.trim());
-    }
   }
 
-  Future<void> _createClass(String name) async {
+  Future<void> _createClass(String name, List<Student> students) async {
     try {
       final now = DateTime.now();
       final newClass = ClassRoom(
         id: '${now.millisecondsSinceEpoch}-${name.hashCode}',
         name: name,
+        students: students,
       );
 
       await _dbHelper.addClass(newClass);
 
+      // Ajouter les élèves à la base de données
+      for (final student in students) {
+        final studentWithClass = student.copyWith(classId: newClass.id);
+        await _dbHelper.addStudent(studentWithClass);
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Classe "$name" créée avec succès'),
+            content: Text('✅ Classe "$name" créée avec succès (${students.length} élève(s))'),
             backgroundColor: Colors.green,
           ),
         );
@@ -273,68 +434,174 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
   Future<void> _showEditClassDialog(ClassRoom classRoom) async {
     final TextEditingController nameController = TextEditingController(text: classRoom.name);
     final formKey = GlobalKey<FormState>();
+    final editingStudents = List<Student>.from(classRoom.students);
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Modifier la classe'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nom de la classe *',
-              border: OutlineInputBorder(),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Modifier la classe'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom de la classe *',
+                    border: OutlineInputBorder(),
+                  ),
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Le nom est obligatoire';
+                    }
+                    if (_classes.any((c) => 
+                        c.id != classRoom.id && 
+                        c.name.toLowerCase() == value.trim().toLowerCase())) {
+                      return 'Une classe avec ce nom existe déjà';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Élèves',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        _showAddStudentDialog(editingStudents, (updatedStudents) {
+                          setState(() {
+                            // Les élèves sont mis à jour directement dans la liste
+                          });
+                        });
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Ajouter'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (editingStudents.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Aucun élève ajouté',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: editingStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = editingStudents[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          child: ListTile(
+                            dense: true,
+                            title: Text('${student.firstName} ${student.lastName}'),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                setState(() {
+                                  editingStudents.removeAt(index);
+                                });
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
-            autofocus: true,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Le nom est obligatoire';
-              }
-              // Vérifier si une autre classe avec ce nom existe déjà
-              if (_classes.any((c) => 
-                  c.id != classRoom.id && 
-                  c.name.toLowerCase() == value.trim().toLowerCase())) {
-                return 'Une classe avec ce nom existe déjà';
-              }
-              return null;
-            },
           ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(context).pop(true);
-              }
-            },
-            child: const Text('Enregistrer'),
-          ),
-        ],
       ),
     );
 
     if (result == true && nameController.text.trim().isNotEmpty) {
-      await _updateClass(classRoom, nameController.text.trim());
+      await _updateClass(classRoom, nameController.text.trim(), editingStudents);
     }
   }
 
-  Future<void> _updateClass(ClassRoom classRoom, String newName) async {
+  Future<void> _updateClass(ClassRoom classRoom, String newName, List<Student> updatedStudents) async {
     try {
       final updatedClass = classRoom.copyWith(
         name: newName,
+        students: updatedStudents,
       );
 
       await _dbHelper.updateClass(updatedClass);
 
+      // Gérer les changements d'élèves
+      // 1. Récupérer les anciens élèves
+      final oldStudents = classRoom.students;
+      
+      // 2. Supprimer les élèves qui ont été supprimés
+      for (final oldStudent in oldStudents) {
+        if (!updatedStudents.any((s) => s.id == oldStudent.id)) {
+          await _dbHelper.deleteStudent(oldStudent.id);
+        }
+      }
+      
+      // 3. Ajouter ou mettre à jour les élèves
+      for (final student in updatedStudents) {
+        if (oldStudents.any((s) => s.id == student.id)) {
+          // Élève existant, le mettre à jour avec le bon classId
+          final updatedStudent = student.copyWith(classId: classRoom.id);
+          await _dbHelper.updateStudent(updatedStudent);
+        } else {
+          // Nouvel élève, l'ajouter avec le bon classId
+          final studentWithClass = student.copyWith(classId: classRoom.id);
+          await _dbHelper.addStudent(studentWithClass);
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Classe modifiée avec succès'),
+          SnackBar(
+            content: Text('✅ Classe modifiée avec succès (${updatedStudents.length} élève(s))'),
             backgroundColor: Colors.green,
           ),
         );
@@ -386,6 +653,10 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
 
   Future<void> _deleteClass(ClassRoom classRoom) async {
     try {
+      // Supprimer tous les élèves de la classe (cascade)
+      await _dbHelper.deleteStudentsByClass(classRoom.id);
+      
+      // Supprimer la classe
       await _dbHelper.deleteClass(classRoom.id);
 
       if (mounted) {

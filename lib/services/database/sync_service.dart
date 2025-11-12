@@ -18,6 +18,7 @@ class SyncService {
   List<Book>? _booksSnapshot;
   List<BookGroup>? _groupsSnapshot;
   List<ClassRoom>? _classesSnapshot;
+  List<Student>? _studentsSnapshot;
 
   SyncService(this._dbHelper, this._sheetsService);
 
@@ -65,10 +66,13 @@ class SyncService {
       // 2. Synchroniser les classes d'abord
       await _syncClasses();
       
-      // 3. Synchroniser les groupes (car les livres y font référence)
+      // 3. Synchroniser les élèves (car ils dépendent des classes)
+      await _syncStudents();
+      
+      // 4. Synchroniser les groupes (car les livres y font référence)
       await _syncGroups();
       
-      // 4. Synchroniser les livres
+      // 5. Synchroniser les livres
       await _syncBooks();
       
       // 4. Enregistrer la date de dernière sync
@@ -84,6 +88,7 @@ class SyncService {
       _booksSnapshot = null;
       _groupsSnapshot = null;
       _classesSnapshot = null;
+      _studentsSnapshot = null;
     }
   }
 
@@ -93,7 +98,8 @@ class SyncService {
     _booksSnapshot = await _dbHelper.getAllBooks();
     _groupsSnapshot = await _dbHelper.getAllGroups();
     _classesSnapshot = await _dbHelper.getAllClasses();
-    _logger.i('📸 Snapshot créé : ${_booksSnapshot!.length} livres, ${_groupsSnapshot!.length} groupes, ${_classesSnapshot!.length} classes');
+    _studentsSnapshot = await _dbHelper.getAllStudents();
+    _logger.i('📸 Snapshot créé : ${_booksSnapshot!.length} livres, ${_groupsSnapshot!.length} groupes, ${_classesSnapshot!.length} classes, ${_studentsSnapshot!.length} élèves');
   }
 
   /// Synchronise les classes de manière bidirectionnelle
@@ -138,6 +144,55 @@ class SyncService {
     }
     
     _logger.i('✅ Synchronisation des classes terminée');
+  }
+
+  /// Synchronise les élèves de manière bidirectionnelle
+  Future<void> _syncStudents() async {
+    _logger.i('👨‍🎓 ========== SYNCHRONISATION DES ÉLÈVES ==========');
+    
+    // Récupérer les élèves de Google Sheets
+    final remoteStudents = await _sheetsService.getAllStudents();
+    _logger.i('☁️  ${remoteStudents.length} élèves sur Google Sheets');
+    
+    // Récupérer les élèves locaux (depuis le snapshot)
+    final localStudents = _studentsSnapshot ?? [];
+    _logger.i('💾 ${localStudents.length} élèves en local');
+    
+    // Créer des maps pour accès rapide
+    final remoteStudentsMap = {for (var s in remoteStudents) s.id: s};
+    final localStudentsMap = {for (var s in localStudents) s.id: s};
+    
+    // 1. Élèves présents en remote mais pas en local → Ajouter en local
+    for (final remoteStudent in remoteStudents) {
+      if (!localStudentsMap.containsKey(remoteStudent.id)) {
+        _logger.i('⬇️  Ajout de l\'élève remote "${remoteStudent.fullName}" en local');
+        await _dbHelper.addStudent(remoteStudent);
+      }
+    }
+    
+    // 2. Élèves présents en local mais pas en remote → Ajouter en remote
+    for (final localStudent in localStudents) {
+      if (!remoteStudentsMap.containsKey(localStudent.id)) {
+        _logger.i('⬆️  Ajout de l\'élève local "${localStudent.fullName}" sur Google Sheets');
+        await _sheetsService.addStudent(localStudent);
+      }
+    }
+    
+    // 3. Élèves présents des deux côtés → Synchroniser les modifications
+    for (final localStudent in localStudents) {
+      final remoteStudent = remoteStudentsMap[localStudent.id];
+      if (remoteStudent != null) {
+        // Vérifier si l'élève local a été modifié
+        if (localStudent.firstName != remoteStudent.firstName ||
+            localStudent.lastName != remoteStudent.lastName ||
+            localStudent.classId != remoteStudent.classId) {
+          _logger.i('🔄 Mise à jour de l\'élève "${localStudent.fullName}" sur Google Sheets');
+          await _sheetsService.updateStudent(localStudent);
+        }
+      }
+    }
+    
+    _logger.i('✅ Synchronisation des élèves terminée');
   }
 
   /// Synchronise les groupes de manière bidirectionnelle
@@ -307,6 +362,13 @@ class SyncService {
       _logger.i('📥 Import de ${remoteClasses.length} classes');
       for (final classRoom in remoteClasses) {
         await _dbHelper.addClass(classRoom);
+      }
+      
+      // Importer tous les élèves
+      final remoteStudents = await _sheetsService.getAllStudents();
+      _logger.i('📥 Import de ${remoteStudents.length} élèves');
+      for (final student in remoteStudents) {
+        await _dbHelper.addStudent(student);
       }
       
       // Importer tous les groupes

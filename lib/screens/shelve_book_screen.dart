@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import '../services/initialization_service.dart';
 import '../services/database/database_helper.dart';
 import '../widgets/books/book_info_card.dart';
 import '../widgets/svg_logo_widget.dart';
+import '../widgets/scanner/python_barcode_scanner.dart';
 import '../core/utils/dynamic_color_scheme.dart';
 import 'edit_book_screen.dart';
 
@@ -24,12 +26,19 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   late final BookApiService _bookApiService;
   late final LocalDatabaseService _localDbService;
   
+  // Contrôleurs et états
+  final TextEditingController _searchController = TextEditingController();
+  
   Book? _scannedBook;
   BookGroup? _selectedGroup;
   List<BookGroup> _suggestedGroups = [];
   List<BookGroup> _allGroups = [];
+  List<Book> _searchResults = [];
   bool _isLoading = true;
   bool _isBookInDatabase = false;
+  bool _isSearching = false;
+  bool _hasInitialized = false;
+  bool _hasSearchText = false;
   String? _errorMessage;
 
   @override
@@ -39,14 +48,29 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    
+    if (_hasInitialized) return; // Éviter les appels multiples
+    _hasInitialized = true;
+    
     // Initialiser les services depuis le context
     _bookApiService = context.read<BookApiService>();
     _localDbService = context.read<LocalDatabaseService>();
     
     if (widget.scannedIsbn != null) {
       _handleScannedBook(widget.scannedIsbn!);
+    } else {
+      // Pas d'ISBN en paramètre, démarrer en mode recherche
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -264,6 +288,11 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     if (_scannedBook == null) return;
 
     try {
+      final initService = context.read<InitializationService>();
+      if (initService.isOfflineMode) {
+        print('⏸️ Mode hors-ligne actif: synchronisation du retour différée');
+        return;
+      }
       final sheetsService = context.read<GoogleSheetsService>();
       
       // Récupérer le dernier emprunt pour cet ISBN
@@ -280,6 +309,88 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     } catch (e) {
       print('⚠️ Erreur de synchronisation du retour avec Google Sheets: $e');
       // Ne pas bloquer l'utilisateur
+    }
+  }
+
+  /// Rechercher les livres par titre
+  Future<void> _searchBooks(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _hasSearchText = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _hasSearchText = true;
+    });
+
+    try {
+      final allBooks = await _localDbService.getAllBooks();
+      final lowerQuery = query.toLowerCase();
+      
+      final results = allBooks
+          .where((book) => book.title.toLowerCase().contains(lowerQuery))
+          .take(10)
+          .toList();
+
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (e) {
+      setState(() => _isSearching = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur de recherche: $e')),
+        );
+      }
+    }
+  }
+
+  /// Sélectionner un livre depuis les résultats de recherche
+  Future<void> _selectBookFromSearch(Book book) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      setState(() {
+        _scannedBook = book;
+        _isBookInDatabase = true;
+        _searchController.clear();
+        _searchResults = [];
+      });
+
+      if (book.groupId != null && book.groupId!.isNotEmpty) {
+        final groups = await _localDbService.getAllBookGroups();
+        try {
+          final group = groups.firstWhere((g) => g.id == book.groupId);
+          setState(() {
+            _selectedGroup = group;
+            _allGroups = groups;
+          });
+        } catch (e) {
+          print('Groupe non trouvé: $e');
+          setState(() {
+            _allGroups = groups;
+          });
+          await _loadGroupsAndSuggest();
+        }
+      } else {
+        await _loadGroupsAndSuggest();
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Erreur lors de la sélection du livre: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -320,6 +431,21 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
   }
 
   Widget _buildContent(DynamicColorScheme colors) {
+    // Si aucun livre n'a été sélectionné, afficher la recherche + scanner
+    if (_scannedBook == null) {
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: _hasSearchText
+                ? _buildSearchResults()
+                : _buildScannerForShelving(),
+          ),
+        ],
+      );
+    }
+
+    // Si un livre a été sélectionné, afficher le contenu normal
     if (_errorMessage != null) {
       return Center(
         child: Column(
@@ -334,8 +460,13 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Retour'),
+              onPressed: () => setState(() {
+                _scannedBook = null;
+                _selectedGroup = null;
+                _searchController.clear();
+                _errorMessage = null;
+              }),
+              child: const Text('Nouvelle recherche'),
             ),
           ],
         ),
@@ -431,6 +562,130 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
     );
   }
 
+  /// Barre de recherche stylisée
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher par titre ou scanner...',
+          prefixIcon: Icon(
+            Icons.search,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchResults = [];
+                      _hasSearchText = false;
+                    });
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: Colors.grey.shade300,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: _searchController.text.isNotEmpty
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey.shade300,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+        onChanged: _searchBooks,
+      ),
+    );
+  }
+
+  /// Scanner pour l'écran de rangement
+  Widget _buildScannerForShelving() {
+    return PythonBarcodeScanner(
+      onBarcodeDetected: (code) async {
+        await _handleScannedBook(code);
+      },
+      captureInterval: const Duration(milliseconds: 300),
+    );
+  }
+
+  /// Affichage des résultats de recherche
+  Widget _buildSearchResults() {
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Aucun livre trouvé',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final book = _searchResults[index];
+        return _buildSearchResultCardForShelving(book);
+      },
+    );
+  }
+
+  /// Carte de résultat de recherche pour rangement
+  Widget _buildSearchResultCardForShelving(Book book) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: ListTile(
+        title: Text(book.title),
+        subtitle: Text(book.author),
+        trailing: const Icon(Icons.arrow_forward),
+        onTap: () {
+          _selectBookFromSearch(book);
+        },
+      ),
+    );
+  }
+
   Widget _buildShelvingConfirmation(DynamicColorScheme colors) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -477,6 +732,25 @@ class _ShelveBookScreenState extends State<ShelveBookScreen> {
             label: Text(_isBookInDatabase ? 'Modifier le groupe' : 'Choisir un autre groupe'),
             style: TextButton.styleFrom(
               foregroundColor: Colors.grey.shade600,
+            ),
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // Bouton pour télécharger le code-barres
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final barcodeService = context.read<BarcodeService>();
+                await barcodeService.generateAndDownloadBarcode(_scannedBook!.isbn, context);
+              },
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('Télécharger le code-barres'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                foregroundColor: colors.primaryColor,
+              ),
             ),
           ),
           
