@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../services/python_backend_service.dart';
 import '../../core/utils/error_handler.dart';
+import '../../services/database/database_helper.dart';
 
 /// CustomPainter pour dessiner le cadre de scan professionnel
 class ScanFramePainter extends CustomPainter {
@@ -60,13 +61,14 @@ class ScanFramePainter extends CustomPainter {
 class PythonBarcodeScanner extends StatefulWidget {
   final Function(String) onBarcodeDetected;
   final VoidCallback? onError;
+  /// Délai minimal entre deux captures (0 = enchaînement immédiat)
   final Duration captureInterval;
 
   const PythonBarcodeScanner({
     Key? key,
     required this.onBarcodeDetected,
     this.onError,
-    this.captureInterval = const Duration(seconds: 1),
+    this.captureInterval = Duration.zero,
   }) : super(key: key);
 
   @override
@@ -77,9 +79,11 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     with TickerProviderStateMixin {
   CameraController? _controller;
   final PythonBackendService _backendService = PythonBackendService();
+  final DatabaseHelper _databaseHelper = DatabaseHelper();
   
-  Timer? _captureTimer;
   bool _isScanning = false;
+  bool _autoCaptureEnabled = false;
+  bool _captureScheduled = false;
   bool _isReady = false;
   bool _isSwitchingCamera = false; // État de changement de caméra
   String? _lastDetectedBarcode;
@@ -134,6 +138,9 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     // Écouter les changements de focus pour afficher/masquer l'indicateur de pause
     _manualIsbnFocusNode.addListener(() {
       if (mounted) setState(() {});
+      if (!_manualIsbnFocusNode.hasFocus) {
+        _queueNextCapture(Duration.zero);
+      }
     });
     
     _initializeScanner();
@@ -142,8 +149,8 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   @override
   void dispose() {
     // Arrêter immédiatement la capture
-    _captureTimer?.cancel();
-    _captureTimer = null;
+    _autoCaptureEnabled = false;
+    _captureScheduled = false;
     
     // Disposer les animations
     _scanAnimationController.dispose();
@@ -254,17 +261,21 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         throw Exception('Aucune caméra disponible');
       }
 
+      await _restoreLastCameraSelection();
+
       // Note: Les erreurs de threading camera_windows dans la console sont normales
       // et n'affectent pas le fonctionnement du scanner
       debugPrint('ℹ️ Note: Les messages d\'erreur de threading camera_windows sont un bug connu du plugin et peuvent être ignorés');
       
       await _initializeCamera();
-      _startPeriodicCapture();
+      unawaited(_persistSelectedCamera());
 
       setState(() {
         _isReady = true;
         _statusMessage = 'Scanner prêt ✓';
       });
+
+      _resumeAutoCapture(immediate: true);
 
     } catch (e, stackTrace) {
       setState(() {
@@ -347,30 +358,65 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     }
   }
 
-  /// Démarre la capture périodique avec l'intervalle configuré
-  void _startPeriodicCapture() {
-    _captureTimer?.cancel();
-    _captureTimer = Timer.periodic(widget.captureInterval, (timer) {
-      if (!_isScanning && _isReady && _controller?.value.isInitialized == true) {
+  Duration get _processingDelay =>
+      widget.captureInterval.isNegative ? Duration.zero : widget.captureInterval;
+
+  bool get _controllerInitialized => _controller?.value.isInitialized == true;
+
+  bool get _canStartCapture =>
+      mounted &&
+      _autoCaptureEnabled &&
+      !_isScanning &&
+      _isReady &&
+      _controllerInitialized &&
+      !_manualIsbnFocusNode.hasFocus;
+
+  void _queueNextCapture([Duration? customDelay]) {
+    if (!_autoCaptureEnabled || _captureScheduled) return;
+    final delay = customDelay ?? _processingDelay;
+    _captureScheduled = true;
+    Future.delayed(delay < Duration.zero ? Duration.zero : delay, () {
+      _captureScheduled = false;
+      if (_canStartCapture) {
         _captureAndAnalyze();
       }
     });
   }
 
+  void _pauseAutoCapture() {
+    _autoCaptureEnabled = false;
+    _captureScheduled = false;
+  }
+
+  void _resumeAutoCapture({bool immediate = false}) {
+    _autoCaptureEnabled = true;
+    _captureScheduled = false;
+    final delay = immediate ? Duration.zero : _processingDelay;
+    _queueNextCapture(delay);
+  }
+
+  void _updateScanningState(bool value) {
+    if (!mounted) {
+      _isScanning = value;
+      return;
+    }
+
+    if (_manualIsbnFocusNode.hasFocus) {
+      _isScanning = value;
+      return;
+    }
+
+    if (_isScanning != value) {
+      setState(() => _isScanning = value);
+    }
+  }
+
   /// Capture et analyse une image
   Future<void> _captureAndAnalyze() async {
-    if (_isScanning || !_isReady || _controller?.value.isInitialized != true) return;
-    
-    // Ne pas scanner si l'utilisateur tape dans le champ manuel
-    if (_manualIsbnFocusNode.hasFocus) return;
+    if (!_canStartCapture) return;
 
     try {
-      // Éviter setState si le focus est sur le champ manuel
-      if (!_manualIsbnFocusNode.hasFocus && mounted) {
-        setState(() => _isScanning = true);
-      } else {
-        _isScanning = true;
-      }
+      _updateScanningState(true);
 
       final XFile imageFile = await _controller!.takePicture();
       final Uint8List imageBytes = await imageFile.readAsBytes();
@@ -402,12 +448,8 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
     } catch (e) {
       debugPrint('❌ Erreur capture: $e');
     } finally {
-      // Éviter setState si le focus est sur le champ manuel
-      if (!_manualIsbnFocusNode.hasFocus && mounted) {
-        setState(() => _isScanning = false);
-      } else if (mounted) {
-        _isScanning = false;
-      }
+      _updateScanningState(false);
+      _queueNextCapture();
     }
   }
 
@@ -455,7 +497,7 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
   
   /// Arrête temporairement le scanner
   void _stopScanning() {
-    _captureTimer?.cancel();
+    _pauseAutoCapture();
     setState(() {
       _isReady = false;
     });
@@ -559,22 +601,23 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         _showCameraDropdown = false;
       });
       
-      _captureTimer?.cancel();
+      _pauseAutoCapture();
       await _controller?.dispose();
       
       _selectedCameraIndex = index;
       await _initializeCamera();
+      await _persistSelectedCamera();
       
       // Attendre que la caméra soit vraiment stable
       await Future.delayed(const Duration(milliseconds: 500));
-      
-      _startPeriodicCapture();
       
       setState(() {
         _isSwitchingCamera = false; // Désactiver l'état de chargement
         _isReady = true; // Marquer comme prêt
         _statusMessage = 'Caméra changée ✓';
       });
+
+      _resumeAutoCapture(immediate: true);
     } catch (e, stackTrace) {
       setState(() {
         _isSwitchingCamera = false;
@@ -590,6 +633,40 @@ class _PythonBarcodeScannerState extends State<PythonBarcodeScanner>
         );
       }
     }
+  }
+
+  Future<void> _restoreLastCameraSelection() async {
+    try {
+      final savedId = await _databaseHelper.getLastSelectedCamera();
+      if (savedId == null) {
+        return;
+      }
+      final matchIndex = _cameras.indexWhere((camera) => _cameraIdentifier(camera) == savedId);
+      if (matchIndex != -1) {
+        _selectedCameraIndex = matchIndex;
+      } else {
+        debugPrint('Dernière caméra utilisée introuvable, utilisation du premier périphérique disponible');
+      }
+    } catch (e) {
+      debugPrint('Erreur restauration caméra préférée: $e');
+    }
+  }
+
+  Future<void> _persistSelectedCamera() async {
+    try {
+      if (_cameras.isEmpty) return;
+      final cameraId = _cameraIdentifier(_cameras[_selectedCameraIndex]);
+      await _databaseHelper.setLastSelectedCamera(cameraId);
+    } catch (e) {
+      debugPrint('Erreur sauvegarde caméra préférée: $e');
+    }
+  }
+
+  String _cameraIdentifier(CameraDescription camera) {
+    final sanitizedName = camera.name.replaceAll('|', '_');
+    final direction = camera.lensDirection.name;
+    final orientation = camera.sensorOrientation;
+    return '$sanitizedName|$direction|$orientation';
   }
 
   /// Fait une rotation de la caméra

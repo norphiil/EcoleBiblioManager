@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:logger/logger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../models/models.dart';
 
 /// Service de gestion de Supabase (remplace GoogleSheetsService)
@@ -17,22 +20,29 @@ class SupabaseService {
   
   SupabaseService() : _client = Supabase.instance.client;
   
-  /// Teste la connexion à Supabase
-  Future<bool> testConnection() async {
+  /// Teste la connexion à Supabase et lève une erreur détaillée en cas d'échec
+  Future<void> testConnection({Duration timeout = const Duration(seconds: 30)}) async {
+    final stopwatch = Stopwatch()..start();
+    final timeoutLabel = timeout.inSeconds;
     try {
-      _logger.i('🔌 Test de connexion à Supabase...');
-      
-      // Tester avec une simple requête COUNT sur la table books
+      _logger.i('🔌 Test de connexion à Supabase (timeout ${timeoutLabel}s)...');
       await _client
           .from(_booksTable)
           .select('isbn')
-          .limit(1);
-      
-      _logger.i('✅ Connexion Supabase OK');
-      return true;
-    } catch (e) {
-      _logger.e('❌ Erreur connexion Supabase: $e');
-      return false;
+          .limit(1)
+          .timeout(timeout);
+
+      stopwatch.stop();
+      _logger.i('✅ Connexion Supabase OK (${stopwatch.elapsedMilliseconds} ms)');
+    } on TimeoutException catch (e) {
+      stopwatch.stop();
+      final message = '⏱️ Timeout connexion Supabase après ${timeoutLabel}s';
+      _logger.e(message, error: e, stackTrace: StackTrace.current);
+      throw TimeoutException(message, e.duration ?? timeout);
+    } catch (e, stackTrace) {
+      stopwatch.stop();
+      _logger.e('❌ Erreur connexion Supabase', error: e, stackTrace: stackTrace);
+      rethrow;
     }
   }
   

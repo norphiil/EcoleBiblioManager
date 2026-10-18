@@ -84,7 +84,7 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
     }
 
     try {
-      final content = await selectedFile.readAsString();
+      final content = await _logService.readLogFile(selectedFile);
       setState(() {
         _logContent = content.isNotEmpty 
             ? content 

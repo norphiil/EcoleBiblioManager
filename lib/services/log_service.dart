@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,8 @@ class LogService {
   final List<String> _memoryLogs = []; // Logs en mémoire comme backup
   static const int _maxMemoryLogs = 1000;
   bool _initialized = false;
+  bool _isMirroringConsole = false;
+  static final RegExp _ansiEscapePattern = RegExp(r'\x1B\[[0-9;]*[A-Za-z]');
 
   /// Initialise le service de logs
   Future<void> initialize() async {
@@ -51,7 +54,8 @@ class LogService {
   Future<void> log(String message, {LogLevel level = LogLevel.info}) async {
     final timestamp = DateTime.now().toString().substring(11, 19); // HH:mm:ss
     final prefix = _getLevelPrefix(level);
-    final logLine = '[$timestamp] $prefix $message';
+    final rawLine = '[$timestamp] $prefix $message';
+    final logLine = _sanitizeLogLine(rawLine);
 
     // Ajouter en mémoire
     _memoryLogs.add(logLine);
@@ -62,10 +66,8 @@ class LogService {
     // Écrire dans le fichier
     await _writeToFile(logLine);
 
-    // Afficher dans la console en mode debug
-    if (kDebugMode) {
-      debugPrint(logLine);
-    }
+    // Répliquer dans la console en évitant la récursion avec le hook global
+    _mirrorToConsole(logLine);
   }
 
   /// Obtient le préfixe selon le niveau
@@ -93,6 +95,32 @@ class LogService {
         debugPrint('❌ Erreur écriture log: $e');
       }
     }
+  }
+
+  /// Indique si le service écrit lui-même dans la console
+  bool get isMirroringConsole => _isMirroringConsole;
+
+  /// Réplique un message dans la console en évitant les boucles infinies
+  void _mirrorToConsole(String line) {
+    if (_isMirroringConsole) {
+      debugPrint(line);
+      return;
+    }
+
+    _isMirroringConsole = true;
+    try {
+      debugPrint(line);
+    } finally {
+      _isMirroringConsole = false;
+    }
+  }
+
+  /// Supprime les séquences ANSI et caractères illisibles pour éviter les erreurs d'encodage
+  String _sanitizeLogLine(String line) {
+    var sanitized = line.replaceAll(_ansiEscapePattern, '');
+    sanitized = sanitized.replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), '');
+    sanitized = sanitized.replaceAll(String.fromCharCode(0xFFFD), '');
+    return sanitized;
   }
 
   /// Log une erreur avec stack trace
@@ -138,12 +166,31 @@ class LogService {
   Future<String?> getLogFileContent() async {
     if (_logFile != null && await _logFile!.exists()) {
       try {
-        return await _logFile!.readAsString();
+        return await readLogFile(_logFile!);
       } catch (e) {
         debugPrint('❌ Erreur lecture log: $e');
       }
     }
     return null;
+  }
+
+  /// Lit un fichier de log donné avec décodage tolérant
+  Future<String> readLogFile(File file) async {
+    return _readFileWithFallback(file);
+  }
+
+  /// Lit un fichier en UTF-8 avec fallback permissif en cas d'erreur
+  Future<String> _readFileWithFallback(File file) async {
+    final bytes = await file.readAsBytes();
+    try {
+      return const Utf8Codec().decode(bytes);
+    } on FormatException {
+      try {
+        return const Utf8Codec(allowMalformed: true).decode(bytes);
+      } catch (_) {
+        return const Latin1Codec().decode(bytes, allowInvalid: true);
+      }
+    }
   }
 
   /// Liste tous les fichiers de logs disponibles

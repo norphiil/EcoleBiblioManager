@@ -5,6 +5,15 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class AppConstants {
   /// Mode debug global (contrôlé par .env)
   static bool get isDebugMode => (dotenv.env['DEBUG'] ?? '').toLowerCase() == 'true';
+  static bool get allowInsecureSsl => (dotenv.env['ALLOW_INSECURE_SSL'] ?? '').toLowerCase() == 'true';
+  static List<String> get insecureSslHosts {
+    final list = (dotenv.env['INSECURE_SSL_HOSTS'] ?? '')
+        .split(',')
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    return list;
+  }
   // Couleurs principales
   static const Color primaryBlue = Color(0xFF2196F3);
   static const Color primaryGreen = Color(0xFF4CAF50);

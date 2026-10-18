@@ -139,10 +139,15 @@ class CompleteSyncService {
         // Parser les données si présentes
         Map<String, dynamic>? data;
         if (dataStr != null && dataStr.isNotEmpty && dataStr != 'null') {
-          try {
-            data = jsonDecode(dataStr) as Map<String, dynamic>;
-          } catch (e) {
-            _logger.warning('⚠️  Impossible de parser data pour $entityType: $e');
+          data = _decodeChangeLogData(dataStr);
+        }
+
+        if (operation != 'delete' && (data == null || data.isEmpty)) {
+          data = await _loadEntitySnapshot(entityType, entityId);
+          if (data == null) {
+            _logger.warning('⚠️  Aucune donnée disponible pour $operation $entityType $entityId, action ignorée');
+            await _dbHelper.archiveChangeLog(actionId);
+            continue;
           }
         }
 
@@ -373,6 +378,40 @@ class CompleteSyncService {
     } catch (e, stackTrace) {
       _logger.severe('❌ Erreur lors de la sync à la fermeture', e, stackTrace);
       return false;
+    }
+  }
+
+  Map<String, dynamic>? _decodeChangeLogData(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (e) {
+      _logger.warning('⚠️  jsonDecode impossible: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _loadEntitySnapshot(String entityType, String entityId) async {
+    switch (entityType) {
+      case 'book':
+        final book = await _dbHelper.getBook(entityId);
+        return book?.toSupabaseJson();
+      case 'group':
+        final group = await _dbHelper.getGroup(entityId);
+        return group?.toSupabaseJson();
+      case 'student':
+        final student = await _dbHelper.getStudentById(entityId);
+        return student?.toSupabaseJson();
+      case 'class':
+        final classroom = await _dbHelper.getClassById(entityId);
+        return classroom?.toSupabaseJson();
+      case 'borrow_history':
+        final history = await _dbHelper.getBorrowHistoryById(entityId);
+        return history?.toSupabaseJson();
+      default:
+        return null;
     }
   }
 }

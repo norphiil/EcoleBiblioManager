@@ -17,13 +17,46 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 import json
+from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
 # Configuration du logging
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format=LOG_FORMAT
 )
 logger = logging.getLogger("barcode_backend")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+
+def _configure_file_logging() -> None:
+    """Configure un fichier de log partagé avec Flutter."""
+    try:
+        logs_root = Path(__file__).resolve().parent.parent / "logs"
+        logs_root.mkdir(parents=True, exist_ok=True)
+
+        file_handler = RotatingFileHandler(
+            logs_root / "python_backend.log",
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8"
+        )
+        file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+        logger.addHandler(file_handler)
+
+        # Synchroniser les logs uvicorn avec le même handler
+        for target in ("uvicorn.error", "uvicorn.access"):
+            logging.getLogger(target).addHandler(file_handler)
+
+        logger.info("📝 Journalisation fichier activée: %s", logs_root)
+    except Exception as exc:  # pragma: no cover - log only
+        logger.warning("⚠️ Impossible d'initialiser le fichier de log: %s", exc)
+
+
+_configure_file_logging()
 
 # Pour activer les logs DEBUG, décommentez la ligne suivante:
 # logger.setLevel(logging.DEBUG)

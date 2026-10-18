@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -8,6 +9,7 @@ import '../../models/models.dart';
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   static Database? _database;
+  static const String _lastCameraKey = 'scanner_last_camera';
 
   factory DatabaseHelper() => _instance;
 
@@ -523,6 +525,16 @@ class DatabaseHelper {
     await setSyncMetadata('last_sync_time', time.toIso8601String());
   }
 
+  /// Sauvegarde l'identifiant de la dernière caméra utilisée
+  Future<void> setLastSelectedCamera(String cameraId) async {
+    await setSyncMetadata(_lastCameraKey, cameraId);
+  }
+
+  /// Récupère l'identifiant de la dernière caméra utilisée
+  Future<String?> getLastSelectedCamera() async {
+    return getSyncMetadata(_lastCameraKey);
+  }
+
   // ==================== UTILITAIRES ====================
 
   /// Vide toutes les tables (pour réinitialisation)
@@ -651,6 +663,19 @@ class DatabaseHelper {
     );
   }
 
+  /// Récupère une classe par ID
+  Future<ClassRoom?> getClassById(String id) async {
+    final db = await database;
+    final maps = await db.query(
+      'classes',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return _classFromMap(maps.first);
+  }
+
   /// Met à jour une classe existante
   Future<void> updateClass(ClassRoom classRoom) async {
     final db = await database;
@@ -743,6 +768,19 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [student.id],
     );
+  }
+
+  /// Récupère un élève par ID
+  Future<Student?> getStudentById(String id) async {
+    final db = await database;
+    final maps = await db.query(
+      'students',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return _studentFromMap(maps.first);
   }
 
   /// Supprime un élève
@@ -854,6 +892,19 @@ class DatabaseHelper {
     );
   }
 
+  /// Récupère un enregistrement d'historique par ID
+  Future<BorrowHistory?> getBorrowHistoryById(String id) async {
+    final db = await database;
+    final maps = await db.query(
+      'borrow_history',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return _borrowHistoryFromMap(maps.first);
+  }
+
   /// Marque le dernier emprunt comme retourné pour un livre
   Future<void> markLastBorrowAsReturned(String isbn) async {
     final db = await database;
@@ -921,7 +972,7 @@ class DatabaseHelper {
       'entity_type': entityType,
       'entity_id': entityId,
       'operation': operation,
-      'data': data != null ? data.toString() : null,
+      'data': data != null ? jsonEncode(data) : null,
       'created_at': DateTime.now().toIso8601String(),
       'synced': 0,
     });

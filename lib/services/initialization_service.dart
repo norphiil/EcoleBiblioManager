@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+
 import '../core/utils/logger.dart';
 import 'supabase/supabase_service.dart';
 import 'database/database_helper.dart';
@@ -56,11 +58,17 @@ class InitializationService extends ChangeNotifier {
       // Étape 2: Test de connexion Supabase (si non hors-ligne)
       if (!_offlineMode) {
         _updateProgress('Connexion à Supabase...', 0.3);
-        final isConnected = await _supabaseService.testConnection();
-        if (!isConnected) {
-          throw Exception('Impossible de se connecter à Supabase');
+        try {
+          await _supabaseService.testConnection(timeout: const Duration(seconds: 100));
+          _updateProgress('Connexion établie', 0.4);
+        } on TimeoutException catch (e) {
+          throw InitializationException(
+            'Supabase n\'a pas répondu après ${e.duration?.inSeconds ?? 100} secondes. '
+            'Vérifiez la connexion internet et réessayez.',
+          );
+        } catch (e) {
+          throw InitializationException('Erreur Supabase: $e');
         }
-        _updateProgress('Connexion établie', 0.4);
       } else {
         _updateProgress('Mode hors-ligne activé - Supabase ignoré', 0.4);
       }
